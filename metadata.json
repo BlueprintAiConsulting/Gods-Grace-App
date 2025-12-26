@@ -2,6 +2,7 @@
   "name": "God's Grace Command Center",
   "description": "A comprehensive operational command center for God's Grace Lawn & Landscape, featuring job tracking, financial metrics, and scheduling management.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "camera"
   ]
 }

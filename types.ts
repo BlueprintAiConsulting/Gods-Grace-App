@@ -41,6 +41,16 @@ export interface Job {
   recurringServicePitched: boolean;
 }
 
+export interface Expense {
+  id: string;
+  store: string;
+  date: string;
+  total: number;
+  category: string;
+  items: string[];
+  imageUrl?: string;
+}
+
 export interface MowEstimate {
   id: string;
   clientName: string;
@@ -77,7 +87,7 @@ export interface MaterialItem {
   unitCost: number;
 }
 
-export type ViewType = 'dashboard' | 'leads' | 'jobs' | 'schedule' | 'financials' | 'estimators';
+export type ViewType = 'dashboard' | 'leads' | 'jobs' | 'receipts' | 'schedule' | 'financials' | 'estimators';
 export type EstimatorSubView = 'mow' | 'mulch' | 'landscape';
 
 export interface DashboardStats {

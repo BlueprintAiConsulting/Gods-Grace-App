@@ -11,7 +11,8 @@ import {
   Menu,
   X,
   UserPlus,
-  Calculator
+  Calculator,
+  Receipt
 } from 'lucide-react';
 import { Job, ViewType } from './types';
 import { mockJobs, getStats } from './services/dataService';
@@ -19,6 +20,7 @@ import Dashboard from './components/Dashboard';
 import JobManagement from './components/JobManagement';
 import LeadsManagement from './components/LeadsManagement';
 import Estimators from './components/Estimators';
+import ReceiptUploader from './components/ReceiptUploader';
 import Logo from './components/Logo';
 
 const App: React.FC = () => {
@@ -66,6 +68,13 @@ const App: React.FC = () => {
             isActive={activeView === 'jobs'} 
             isOpen={isSidebarOpen} 
             onClick={() => setActiveView('jobs')}
+          />
+          <SidebarItem 
+            icon={<Receipt />} 
+            label="Receipts" 
+            isActive={activeView === 'receipts'} 
+            isOpen={isSidebarOpen} 
+            onClick={() => setActiveView('receipts')}
           />
           <SidebarItem 
             icon={<Calculator />} 
@@ -152,6 +161,7 @@ const App: React.FC = () => {
               onAddJob={() => alert('New Job Entry Logic Coming Soon!')} 
             />
           )}
+          {activeView === 'receipts' && <ReceiptUploader />}
           {activeView === 'estimators' && <Estimators />}
           {activeView === 'schedule' && (
              <div className="flex flex-col items-center justify-center h-full text-slate-400">
