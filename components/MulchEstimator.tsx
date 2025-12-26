@@ -9,10 +9,20 @@ import {
   Clock, 
   DollarSign, 
   Info,
-  ChevronDown
+  ChevronDown,
+  History,
+  Save,
+  CheckCircle2
 } from 'lucide-react';
-// Fix: Removed non-existent and unused import MulchEstimate
 import { MulchBed } from '../types';
+
+interface SavedMulchEstimate {
+  id: string;
+  date: string;
+  totalYards: number;
+  totalCost: number;
+  bedCount: number;
+}
 
 const MulchEstimator: React.FC = () => {
   const [beds, setBeds] = useState<MulchBed[]>([
@@ -26,6 +36,8 @@ const MulchEstimator: React.FC = () => {
     clientName: '',
     address: ''
   });
+
+  const [history, setHistory] = useState<SavedMulchEstimate[]>([]);
 
   const addBed = () => {
     setBeds([...beds, { id: Date.now().toString(), name: `Area ${beds.length + 1}`, sqft: 0, depth: 4 }]);
@@ -58,6 +70,17 @@ const MulchEstimator: React.FC = () => {
       grandTotal: Number(grandTotal.toFixed(2))
     };
   }, [beds, config]);
+
+  const handleSave = () => {
+    const newEstimate: SavedMulchEstimate = {
+      id: `MUL-${Date.now().toString().slice(-4)}`,
+      date: new Date().toLocaleDateString(),
+      totalYards: totals.yards,
+      totalCost: totals.grandTotal,
+      bedCount: beds.length
+    };
+    setHistory([newEstimate, ...history]);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -200,6 +223,35 @@ const MulchEstimator: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* History Section */}
+        {history.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-50 flex items-center gap-3">
+              <History className="w-5 h-5 text-slate-400" />
+              <h3 className="font-bold text-slate-800">Saved Estimates</h3>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {history.map((item) => (
+                <div key={item.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">{item.id}</h4>
+                      <p className="text-xs text-slate-500">{item.bedCount} Beds • {item.totalYards} yds</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-black text-[#143d2b]">${item.totalCost.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-slate-400">{item.date}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Summary Sidebar */}
@@ -234,8 +286,11 @@ const MulchEstimator: React.FC = () => {
                 <p className="text-lg font-black text-[#f4c430]">{totals.hours}h</p>
               </div>
             </div>
-            <button className="w-full mt-8 bg-[#f4c430] text-[#143d2b] py-4 rounded-2xl font-black shadow-lg hover:scale-[1.02] transition-transform active:scale-95 uppercase tracking-wider text-sm">
-              Generate Quote PDF
+            <button 
+              onClick={handleSave}
+              className="w-full mt-8 bg-[#f4c430] text-[#143d2b] py-4 rounded-2xl font-black shadow-lg hover:scale-[1.02] transition-transform active:scale-95 uppercase tracking-wider text-sm flex items-center justify-center gap-2"
+            >
+              <Save className="w-4 h-4" /> Save Estimate
             </button>
           </div>
           {/* Decorative Elements */}

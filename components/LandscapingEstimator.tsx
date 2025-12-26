@@ -9,9 +9,19 @@ import {
   Save, 
   ArrowRight,
   Calculator,
-  Briefcase
+  Briefcase,
+  History,
+  CheckCircle2
 } from 'lucide-react';
 import { LaborTask, MaterialItem } from '../types';
+
+interface SavedLandscapeEstimate {
+  id: string;
+  date: string;
+  totalCost: number;
+  itemCount: number;
+  totalHours: number;
+}
 
 const LandscapingEstimator: React.FC = () => {
   const [laborTasks, setLaborTasks] = useState<LaborTask[]>([
@@ -23,6 +33,7 @@ const LandscapingEstimator: React.FC = () => {
     { id: '3', item: 'Sand', qty: 10, unit: 'bags', unitCost: 5 },
     { id: '4', item: 'Decorative Stone', qty: 5, unit: 'bags', unitCost: 4 }
   ]);
+  const [history, setHistory] = useState<SavedLandscapeEstimate[]>([]);
 
   const addLaborTask = () => {
     setLaborTasks([...laborTasks, { 
@@ -67,6 +78,17 @@ const LandscapingEstimator: React.FC = () => {
       grandTotal: laborCost + materialCost
     };
   }, [laborTasks, materialItems]);
+
+  const handleSave = () => {
+    const newEstimate: SavedLandscapeEstimate = {
+      id: `LND-${Date.now().toString().slice(-4)}`,
+      date: new Date().toLocaleDateString(),
+      totalCost: totals.grandTotal,
+      itemCount: laborTasks.length + materialItems.length,
+      totalHours: totals.totalHours
+    };
+    setHistory([newEstimate, ...history]);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
@@ -218,6 +240,35 @@ const LandscapingEstimator: React.FC = () => {
             </table>
           </div>
         </div>
+
+        {/* History Section */}
+        {history.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-50 flex items-center gap-3">
+              <History className="w-5 h-5 text-slate-400" />
+              <h3 className="font-bold text-slate-800">Saved Estimates</h3>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {history.map((item) => (
+                <div key={item.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-slate-50 text-[#143d2b] flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">{item.id}</h4>
+                      <p className="text-xs text-slate-500">{item.itemCount} Items • {item.totalHours} hrs</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-black text-[#143d2b]">${item.totalCost.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-slate-400">{item.date}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Totals Sidebar */}
@@ -258,7 +309,10 @@ const LandscapingEstimator: React.FC = () => {
               </div>
             </div>
 
-            <button className="w-full mt-8 bg-[#f4c430] text-[#143d2b] py-4 rounded-2xl font-black shadow-lg hover:bg-yellow-400 hover:scale-[1.02] transition-all active:scale-95 uppercase tracking-wider text-sm flex items-center justify-center gap-2">
+            <button 
+              onClick={handleSave}
+              className="w-full mt-8 bg-[#f4c430] text-[#143d2b] py-4 rounded-2xl font-black shadow-lg hover:bg-yellow-400 hover:scale-[1.02] transition-all active:scale-95 uppercase tracking-wider text-sm flex items-center justify-center gap-2"
+            >
               <Save className="w-4 h-4" /> Save Estimate
             </button>
             <button className="w-full mt-3 bg-white/10 text-white py-4 rounded-2xl font-bold border border-white/10 hover:bg-white/20 transition-all text-sm flex items-center justify-center gap-2">
