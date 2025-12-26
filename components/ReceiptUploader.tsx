@@ -16,20 +16,6 @@ import {
 import { GoogleGenAI, Type } from '@google/genai';
 import { Expense } from '../types';
 
-// Define the interface for AIStudio to match existing global definitions provided by the environment
-interface AIStudio {
-  hasSelectedApiKey: () => Promise<boolean>;
-  openSelectKey: () => Promise<void>;
-}
-
-declare global {
-  interface Window {
-    // Use the specific 'AIStudio' type name as required by the compiler.
-    // Use an optional modifier '?' to match standard platform declarations and avoid "identical modifiers" errors.
-    aistudio?: AIStudio;
-  }
-}
-
 const ReceiptUploader: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedExpenses, setScannedExpenses] = useState<Expense[]>([]);
@@ -37,9 +23,13 @@ const ReceiptUploader: React.FC = () => {
   const [requiresKey, setRequiresKey] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Helper to access the globally injected aistudio object safely
+  const getAiStudio = () => (window as any).aistudio;
+
   const checkApiKey = async () => {
-    // Use optional chaining to safely access window.aistudio
-    const hasKey = await window.aistudio?.hasSelectedApiKey();
+    // Access aistudio directly as it's assumed to be pre-configured and globally available.
+    const aistudio = getAiStudio();
+    const hasKey = await aistudio?.hasSelectedApiKey();
     if (!hasKey) {
       setRequiresKey(true);
       return false;
@@ -53,9 +43,10 @@ const ReceiptUploader: React.FC = () => {
     if (!file) return;
 
     const hasKey = await checkApiKey();
+    const aistudio = getAiStudio();
     if (!hasKey) {
       // Trigger API key selection dialog
-      await window.aistudio?.openSelectKey();
+      await aistudio?.openSelectKey();
       // Proceeding after triggering openSelectKey as per race condition instructions: 
       // Assume the key selection was successful after triggering openSelectKey.
     }
@@ -128,7 +119,7 @@ const ReceiptUploader: React.FC = () => {
           if (apiErr.message?.includes("Requested entity was not found")) {
             setRequiresKey(true);
             setError("API Key verification failed. Please select a valid key from a paid project.");
-            await window.aistudio?.openSelectKey();
+            await getAiStudio()?.openSelectKey();
           } else {
             setError("Failed to analyze receipt. Please try again.");
           }
@@ -155,7 +146,7 @@ const ReceiptUploader: React.FC = () => {
         <div className="flex items-center gap-3">
           {requiresKey && (
             <button 
-              onClick={() => window.aistudio?.openSelectKey()}
+              onClick={() => getAiStudio()?.openSelectKey()}
               className="px-4 py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center gap-2 border border-amber-200"
             >
               <Key className="w-4 h-4" /> Setup API Key

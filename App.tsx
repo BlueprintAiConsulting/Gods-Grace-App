@@ -21,6 +21,8 @@ import JobManagement from './components/JobManagement';
 import LeadsManagement from './components/LeadsManagement';
 import Estimators from './components/Estimators';
 import ReceiptUploader from './components/ReceiptUploader';
+import Financials from './components/Financials';
+import Schedule from './components/Schedule';
 import Logo from './components/Logo';
 
 const App: React.FC = () => {
@@ -163,20 +165,8 @@ const App: React.FC = () => {
           )}
           {activeView === 'receipts' && <ReceiptUploader />}
           {activeView === 'estimators' && <Estimators />}
-          {activeView === 'schedule' && (
-             <div className="flex flex-col items-center justify-center h-full text-slate-400">
-               <Calendar className="w-16 h-16 mb-4 opacity-20" />
-               <p className="text-lg font-bold">Field Scheduler View</p>
-               <p className="text-sm">This view will display scheduled jobs from the master CSV in a calendar format.</p>
-             </div>
-          )}
-          {activeView === 'financials' && (
-             <div className="flex flex-col items-center justify-center h-full text-slate-400">
-               <DollarSign className="w-16 h-16 mb-4 opacity-20" />
-               <p className="text-lg font-bold">Financial Analysis View</p>
-               <p className="text-sm">Profit/Loss tracking based on Actual vs Estimated metrics from the Master Sheet.</p>
-             </div>
-          )}
+          {activeView === 'schedule' && <Schedule jobs={filteredJobs} />}
+          {activeView === 'financials' && <Financials jobs={filteredJobs} />}
         </div>
       </main>
     </div>

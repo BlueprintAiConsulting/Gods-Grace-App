@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -11,7 +11,7 @@ import {
   Calendar as CalendarIcon
 } from 'lucide-react';
 import { Job, DashboardStats } from '../types';
-import { STATUS_COLORS, PRIORITY_COLORS } from '../constants';
+import { STATUS_COLORS } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 
 interface DashboardProps {
@@ -20,6 +20,20 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ stats, jobs }) => {
+  
+  // Dynamic Data Calculation for Charts
+  const jobTypeData = useMemo(() => {
+    const typeCounts: Record<string, number> = {};
+    jobs.forEach(job => {
+      const type = job.jobType || 'Other';
+      typeCounts[type] = (typeCounts[type] || 0) + 1;
+    });
+
+    return Object.entries(typeCounts).map(([name, value]) => ({ name, value }));
+  }, [jobs]);
+
+  // Mock weekly data based on "Scheduled Date" for demonstration
+  // In a real app with more history, this would aggregate actual dates
   const chartData = [
     { name: 'Mon', revenue: 4500 },
     { name: 'Tue', revenue: 3200 },
@@ -28,14 +42,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, jobs }) => {
     { name: 'Fri', revenue: 7200 },
   ];
 
-  const jobTypeData = [
-    { name: 'Hardscape', value: 400 },
-    { name: 'Maintenance', value: 300 },
-    { name: 'Mulch/Bed', value: 300 },
-    { name: 'Mowing', value: 200 },
-  ];
-
-  const COLORS_LIST = ['#143d2b', '#f4c430', '#4a3728', '#22c55e'];
+  const COLORS_LIST = ['#143d2b', '#f4c430', '#4a3728', '#22c55e', '#64748b'];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -146,10 +153,12 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, jobs }) => {
             {jobTypeData.map((item, idx) => (
               <div key={item.name} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS_LIST[idx] }}></div>
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS_LIST[idx % COLORS_LIST.length] }}></div>
                   <span className="text-slate-600">{item.name}</span>
                 </div>
-                <span className="font-bold text-slate-800">35%</span>
+                <span className="font-bold text-slate-800">
+                  {((item.value / jobs.length) * 100).toFixed(0)}%
+                </span>
               </div>
             ))}
           </div>

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Filter, 
   Download, 
@@ -14,7 +14,10 @@ import {
   User,
   Search,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { Job } from '../types';
 import { STATUS_COLORS } from '../constants';
@@ -28,10 +31,37 @@ interface JobManagementProps {
 const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob }) => {
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: 'nextActionDate'; direction: 'asc' | 'desc' | null }>({
+    key: 'nextActionDate',
+    direction: null
+  });
 
   // Filter for active customer jobs (not raw leads)
   const customerJobs = jobs.filter(j => !['Lead', 'Quoted', 'Rejected'].includes(j.status));
-  const filtered = filterStatus === 'All' ? customerJobs : customerJobs.filter(j => j.status === filterStatus);
+  
+  const filteredAndSorted = useMemo(() => {
+    let result = filterStatus === 'All' ? [...customerJobs] : customerJobs.filter(j => j.status === filterStatus);
+
+    if (sortConfig.direction) {
+      result.sort((a, b) => {
+        const dateA = a.nextActionDate ? new Date(a.nextActionDate).getTime() : 0;
+        const dateB = b.nextActionDate ? new Date(b.nextActionDate).getTime() : 0;
+
+        if (dateA < dateB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (dateA > dateB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [customerJobs, filterStatus, sortConfig]);
+
+  const toggleSort = () => {
+    setSortConfig(prev => ({
+      key: 'nextActionDate',
+      direction: prev.direction === 'asc' ? 'desc' : prev.direction === 'desc' ? null : 'asc'
+    }));
+  };
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
@@ -79,6 +109,14 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob }) => {
               <tr className="bg-slate-50/50 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
                 <th className="px-6 py-4">Job Info</th>
                 <th className="px-6 py-4">Field Data</th>
+                <th className="px-6 py-4 cursor-pointer hover:text-[#143d2b] transition-colors group" onClick={toggleSort}>
+                  <div className="flex items-center gap-2">
+                    Next Action
+                    {sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-[#143d2b]" /> : 
+                     sortConfig.direction === 'desc' ? <ArrowDown className="w-3 h-3 text-[#143d2b]" /> : 
+                     <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-100" />}
+                  </div>
+                </th>
                 <th className="px-6 py-4">Status & Health</th>
                 <th className="px-6 py-4 text-center">Crew</th>
                 <th className="px-6 py-4 text-right">Revenue</th>
@@ -87,7 +125,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((job) => (
+              {filteredAndSorted.map((job) => (
                 <tr key={job.id} className="group hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
@@ -100,6 +138,14 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob }) => {
                     <div className="flex flex-col text-xs text-slate-600 gap-1">
                       <span className="flex items-center gap-1.5 font-bold"><MapPin className="w-3 h-3 text-[#f4c430]" /> {job.address}</span>
                       <span className="text-slate-400 ml-4.5 font-medium">{job.cityArea}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-800">{job.nextAction || 'None'}</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                        {job.nextActionDate ? new Date(job.nextActionDate).toLocaleDateString() : 'No date set'}
+                      </span>
                     </div>
                   </td>
                   <td className="px-6 py-5">
@@ -153,7 +199,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob }) => {
           </table>
         </div>
         
-        {filtered.length === 0 && (
+        {filteredAndSorted.length === 0 && (
           <div className="py-20 text-center flex flex-col items-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
               <Search className="text-slate-300 w-8 h-8" />
