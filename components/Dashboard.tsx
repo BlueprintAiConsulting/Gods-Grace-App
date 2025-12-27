@@ -1,13 +1,12 @@
-
 import React, { useMemo } from 'react';
 import { 
   DollarSign, 
   TrendingUp, 
   Clock, 
   ClipboardCheck, 
-  ArrowUpRight,
-  ArrowRight,
-  MapPin,
+  ArrowUpRight, 
+  ArrowRight, 
+  MapPin, 
   Calendar as CalendarIcon
 } from 'lucide-react';
 import { Job, DashboardStats } from '../types';
@@ -209,7 +208,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, jobs }) => {
 const KpiCard: React.FC<{ label: string, value: string, trend: string, icon: React.ReactNode, color: string }> = ({ label, value, trend, icon, color }) => (
   <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden group">
     <div className={`absolute top-0 right-0 p-4 rounded-bl-3xl ${color} opacity-40 transition-transform group-hover:scale-110`}>
-      {React.cloneElement(icon as React.ReactElement, { size: 24 })}
+      {React.cloneElement(icon as React.ReactElement<any>, { size: 24 })}
     </div>
     <p className="text-sm font-medium text-slate-500 mb-1">{label}</p>
     <h3 className="text-2xl font-bold text-slate-900">{value}</h3>

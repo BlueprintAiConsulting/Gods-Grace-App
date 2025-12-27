@@ -119,6 +119,10 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob }) => {
                 </th>
                 <th className="px-6 py-4">Status & Health</th>
                 <th className="px-6 py-4 text-center">Crew</th>
+                <th className="px-6 py-4 text-right">Act. Hrs</th>
+                <th className="px-6 py-4 text-right">Act. Labor $</th>
+                <th className="px-6 py-4 text-right">Act. Mat $</th>
+                <th className="px-6 py-4 text-right">Variance</th>
                 <th className="px-6 py-4 text-right">Revenue</th>
                 <th className="px-6 py-4 text-right">Margin</th>
                 <th className="px-6 py-4"></th>
@@ -166,6 +170,20 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob }) => {
                       </div>
                       <span className="text-[10px] font-bold text-slate-600 mt-1">{job.crewLead || 'TBD'}</span>
                     </div>
+                  </td>
+                  <td className="px-6 py-5 text-right">
+                    <span className="text-xs font-bold text-slate-700">{job.actualLaborHours || '-'}</span>
+                  </td>
+                  <td className="px-6 py-5 text-right">
+                    <span className="text-xs font-bold text-slate-700">${(job.actualLaborCost || 0).toLocaleString()}</span>
+                  </td>
+                  <td className="px-6 py-5 text-right">
+                    <span className="text-xs font-bold text-slate-700">${(job.actualMaterialCost || 0).toLocaleString()}</span>
+                  </td>
+                  <td className="px-6 py-5 text-right">
+                    <span className={`text-xs font-bold ${(job.jobCostingVariance || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      ${(job.jobCostingVariance || 0).toLocaleString()}
+                    </span>
                   </td>
                   <td className="px-6 py-5 text-right">
                     <div className="text-sm font-black text-slate-900">${(job.actualRevenue || job.estRevenue).toLocaleString()}</div>

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
   LayoutDashboard, 
@@ -190,7 +189,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon, label, isActive, isOpen
         : 'hover:bg-white/10 text-white/70 hover:text-white'
     }`}
   >
-    <span className="flex-shrink-0">{React.cloneElement(icon as React.ReactElement, { size: 20 })}</span>
+    <span className="flex-shrink-0">{React.cloneElement(icon as React.ReactElement<any>, { size: 20 })}</span>
     {isOpen && <span className="font-bold text-xs uppercase tracking-widest whitespace-nowrap">{label}</span>}
   </button>
 );
