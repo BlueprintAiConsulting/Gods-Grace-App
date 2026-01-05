@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { 
   LayoutDashboard, 
@@ -11,7 +12,8 @@ import {
   X,
   UserPlus,
   Calculator,
-  Receipt
+  Receipt,
+  Map
 } from 'lucide-react';
 import { Job, ViewType } from './types';
 import { mockJobs, getStats } from './services/dataService';
@@ -22,10 +24,11 @@ import Estimators from './components/Estimators';
 import ReceiptUploader from './components/ReceiptUploader';
 import Financials from './components/Financials';
 import Schedule from './components/Schedule';
+import RouteOptimizer from './components/RouteOptimizer';
 import Logo from './components/Logo';
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<ViewType>('dashboard');
+  const [activeView, setActiveView] = useState<ViewType | 'optimizer'>('dashboard');
   const [jobs, setJobs] = useState<Job[]>(mockJobs);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,6 +42,10 @@ const App: React.FC = () => {
       job.id.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [jobs, searchQuery]);
+
+  const handleUpdateJob = (updatedJob: Job) => {
+    setJobs(prevJobs => prevJobs.map(j => j.id === updatedJob.id ? updatedJob : j));
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -83,6 +90,13 @@ const App: React.FC = () => {
             isActive={activeView === 'estimators'} 
             isOpen={isSidebarOpen} 
             onClick={() => setActiveView('estimators')}
+          />
+          <SidebarItem 
+            icon={<Map />} 
+            label="Route Optimizer" 
+            isActive={activeView === 'optimizer'} 
+            isOpen={isSidebarOpen} 
+            onClick={() => setActiveView('optimizer')}
           />
           <SidebarItem 
             icon={<Calendar />} 
@@ -160,10 +174,12 @@ const App: React.FC = () => {
             <JobManagement 
               jobs={filteredJobs} 
               onAddJob={() => alert('New Job Entry Logic Coming Soon!')} 
+              onUpdateJob={handleUpdateJob}
             />
           )}
           {activeView === 'receipts' && <ReceiptUploader />}
           {activeView === 'estimators' && <Estimators />}
+          {activeView === 'optimizer' && <RouteOptimizer jobs={jobs} />}
           {activeView === 'schedule' && <Schedule jobs={filteredJobs} />}
           {activeView === 'financials' && <Financials jobs={filteredJobs} />}
         </div>

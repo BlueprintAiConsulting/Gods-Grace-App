@@ -7,11 +7,11 @@ import {
   Package, 
   DollarSign, 
   Save, 
-  ArrowRight,
-  Calculator,
-  Briefcase,
-  History,
-  CheckCircle2
+  ArrowRight, 
+  Calculator, 
+  Briefcase, 
+  History, 
+  CheckCircle2 
 } from 'lucide-react';
 import { LaborTask, MaterialItem } from '../types';
 
@@ -225,9 +225,14 @@ const LandscapingEstimator: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <span className="text-xs font-bold text-slate-900">
-                        ${(item.qty * item.unitCost).toLocaleString()}
-                      </span>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-sm font-black text-[#143d2b]">
+                          ${(item.qty * item.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold tracking-tight">
+                           {item.qty} {item.unit} × ${item.unitCost}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => removeMaterial(item.id)} className="p-2 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all">

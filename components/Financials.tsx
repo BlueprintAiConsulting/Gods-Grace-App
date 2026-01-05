@@ -8,7 +8,8 @@ import {
   PieChart as PieChartIcon, 
   BarChart3,
   Wallet,
-  ArrowRight
+  ArrowRight,
+  LineChart as LineChartIcon
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -21,7 +22,9 @@ import {
   Legend, 
   PieChart, 
   Pie, 
-  Cell 
+  Cell,
+  AreaChart,
+  Area
 } from 'recharts';
 
 interface FinancialsProps {
@@ -57,6 +60,39 @@ const Financials: React.FC<FinancialsProps> = ({ jobs }) => {
     Cost: (job.actualLaborCost || 0) + (job.actualMaterialCost || 0),
     Profit: job.actualProfit || 0
   }));
+
+  // Data for Trend Chart (Revenue Over Time)
+  const trendData = useMemo(() => {
+    const monthlyStats: Record<string, { name: string, Estimated: number, Actual: number, timestamp: number }> = {};
+
+    financialJobs.forEach(job => {
+      // Use actual completion date if available, otherwise scheduled date
+      const dateStr = job.actualCompletionDate || job.scheduledDate;
+      if (!dateStr) return;
+
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return;
+
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      const name = date.toLocaleDateString('en-US', { month: 'short' });
+
+      if (!monthlyStats[key]) {
+        monthlyStats[key] = { 
+          name, 
+          Estimated: 0, 
+          Actual: 0,
+          timestamp: date.getTime()
+        };
+      }
+
+      monthlyStats[key].Estimated += job.estRevenue || 0;
+      monthlyStats[key].Actual += job.actualRevenue || 0;
+    });
+
+    return Object.values(monthlyStats)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map(({ name, Estimated, Actual }) => ({ name, Estimated, Actual }));
+  }, [financialJobs]);
 
   // Data for Pie Chart (Cost Breakdown)
   const costData = [
@@ -109,6 +145,71 @@ const Financials: React.FC<FinancialsProps> = ({ jobs }) => {
           </div>
           <TrendingUp className="absolute bottom-4 right-4 w-16 h-16 text-white/5" />
           <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2"></div>
+        </div>
+      </div>
+
+      {/* Revenue Trend Chart */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="bg-emerald-50 p-2 rounded-lg text-emerald-700">
+            <LineChartIcon className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800">Revenue Performance Trend</h3>
+            <p className="text-xs text-slate-400 font-medium">Actual vs Estimated Revenue over time</p>
+          </div>
+        </div>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#143d2b" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#143d2b" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorEst" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f4c430" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#f4c430" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="name" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} 
+              />
+              <YAxis 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#94a3b8', fontSize: 11 }} 
+                tickFormatter={(val) => `$${val}`}
+              />
+              <Tooltip 
+                cursor={{ fill: '#f8fafc' }}
+                contentStyle={{ border: 'none', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                formatter={(value: number) => [`$${value.toLocaleString()}`, '']}
+              />
+              <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+              <Area 
+                type="monotone" 
+                dataKey="Actual" 
+                stroke="#143d2b" 
+                fillOpacity={1} 
+                fill="url(#colorActual)" 
+                strokeWidth={2}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="Estimated" 
+                stroke="#f4c430" 
+                fillOpacity={1} 
+                fill="url(#colorEst)" 
+                strokeWidth={2}
+                strokeDasharray="5 5"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
