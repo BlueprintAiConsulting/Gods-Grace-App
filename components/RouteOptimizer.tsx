@@ -18,7 +18,8 @@ import {
   ArrowRight,
   Clock,
   Car,
-  GripVertical
+  GripVertical,
+  Key
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { Job } from '../types';
@@ -93,7 +94,11 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  
+  // Maps State
   const [mapsLoaded, setMapsLoaded] = useState(false);
+  const [keyReady, setKeyReady] = useState(false);
+  const [authError, setAuthError] = useState(false);
   
   // API Route Data
   const [optimizedPlan, setOptimizedPlan] = useState<string | null>(null);
@@ -122,9 +127,11 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       return;
     }
 
-    // 2. Check if script tag is already in DOM to prevent duplicates
-    if (document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
-       // It's loading...
+    // 2. Check if script tag is already in DOM
+    const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+    if (existingScript) {
+       // If auth error happened previously, we might need to re-inject.
+       // But usually, existing script means it's trying to load.
        return; 
     }
 
@@ -149,10 +156,51 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     }
   };
 
-  // Attempt load on mount
+  // Initial Key Check & Load
   useEffect(() => {
-    loadMapsScript();
+    const checkKey = async () => {
+      const aistudio = getAiStudio();
+      if (aistudio) {
+        const has = await aistudio.hasSelectedApiKey();
+        if (has) {
+          setKeyReady(true);
+          loadMapsScript();
+        }
+      }
+    };
+    
+    // Register global auth failure handler
+    (window as any).gm_authFailure = () => {
+       console.error("Google Maps Auth Failure");
+       setAuthError(true);
+       setMapsLoaded(false);
+       setError("Google Maps API Key Invalid or Not Enabled.");
+    };
+
+    checkKey();
+
+    return () => {
+      // Cleanup global handler
+      (window as any).gm_authFailure = null;
+    }
   }, []);
+
+  const handleConnectKey = async () => {
+    const aistudio = getAiStudio();
+    if (aistudio) {
+       await aistudio.openSelectKey();
+       setKeyReady(true);
+       setAuthError(false);
+       setError(null);
+       
+       // Remove any old/failed scripts
+       const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+       if (existingScript) existingScript.remove();
+       
+       // Reload
+       loadMapsScript();
+    }
+  };
 
   // Calculate Route Metrics (Fallback if API fails, or pre-optimization)
   const routeMetrics = useMemo(() => {
@@ -268,7 +316,9 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
 
   // Initialize Map
   useEffect(() => {
-    if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
+    // Only initialize Leaflet if Maps SDK is loaded OR we are using fallback. 
+    // We defer Leaflet init until viewMode is map.
+    if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current && mapsLoaded) {
       const L = (window as any).L;
       if (!L) return; // Wait for Leaflet to load
 
@@ -280,7 +330,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
 
       mapInstanceRef.current = map;
     }
-  }, [viewMode]);
+  }, [viewMode, mapsLoaded]);
 
   // Map Click Listener for Adding Stops
   useEffect(() => {
@@ -467,7 +517,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       prevStopCountRef.current = 0;
     }
 
-  }, [stops, viewMode, routeCoordinates]);
+  }, [stops, viewMode, routeCoordinates, mapsLoaded]);
 
   // --- GEOCODING STRATEGIES ---
 
@@ -1030,7 +1080,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
             <div className="mt-6 pt-6 border-t border-slate-100">
                <button 
                 onClick={handleOptimize}
-                disabled={isOptimizing || stops.length < 2}
+                disabled={isOptimizing || stops.length < 2 || !mapsLoaded}
                 className="w-full bg-[#143d2b] text-white py-4 rounded-xl font-black shadow-lg shadow-[#143d2b]/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isOptimizing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Navigation className="w-5 h-5" />}
@@ -1062,8 +1112,54 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
              {/* Dynamic Map Container */}
              <div 
                ref={mapContainerRef} 
-               className={`w-full h-full bg-slate-100 ${viewMode === 'map' ? 'block' : 'hidden'}`}
+               className={`w-full h-full bg-slate-100 transition-opacity duration-300 ${(viewMode === 'map' && mapsLoaded) ? 'opacity-100' : 'opacity-0'} ${viewMode === 'map' ? 'block' : 'hidden'}`}
              ></div>
+
+             {/* Map Not Loaded State */}
+             {viewMode === 'map' && (!mapsLoaded || authError) && (
+               <div className="absolute inset-0 flex items-center justify-center bg-slate-50 z-10">
+                 <div className="text-center p-8 max-w-sm">
+                   {authError ? (
+                     <>
+                      <div className="bg-rose-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <AlertCircle className="w-8 h-8 text-rose-600" />
+                      </div>
+                      <h3 className="font-black text-slate-800 text-lg mb-2">Maps Authentication Failed</h3>
+                      <p className="text-sm text-slate-500 mb-6">
+                        Your API key may be invalid or does not have the Google Maps JavaScript API enabled.
+                      </p>
+                      <button 
+                        onClick={handleConnectKey}
+                        className="bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center gap-2 mx-auto"
+                      >
+                        <Key className="w-4 h-4" /> Reconnect API Key
+                      </button>
+                     </>
+                   ) : !keyReady ? (
+                     <>
+                       <div className="bg-amber-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <MapPin className="w-8 h-8 text-amber-600" />
+                      </div>
+                      <h3 className="font-black text-slate-800 text-lg mb-2">Connect Google Maps</h3>
+                      <p className="text-sm text-slate-500 mb-6">
+                        To use the map and route optimizer, please connect a valid Google Cloud API key with Maps JavaScript API enabled.
+                      </p>
+                      <button 
+                        onClick={handleConnectKey}
+                        className="bg-[#143d2b] text-white px-6 py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#143d2b]/20 hover:scale-[1.02] transition-transform flex items-center gap-2 mx-auto"
+                      >
+                        <Key className="w-4 h-4" /> Connect API Key
+                      </button>
+                     </>
+                   ) : (
+                     <div className="flex flex-col items-center">
+                       <Loader2 className="w-8 h-8 animate-spin text-[#143d2b] mb-2" />
+                       <p className="text-sm font-bold text-slate-500">Loading Maps SDK...</p>
+                     </div>
+                   )}
+                 </div>
+               </div>
+             )}
 
              {/* Text View Overlay */}
              {viewMode === 'text' && (
@@ -1081,8 +1177,8 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
                 </div>
              )}
              
-             {/* Empty State for Map */}
-             {viewMode === 'map' && stops.length === 0 && (
+             {/* Empty State for Map (Only show if loaded and no stops) */}
+             {viewMode === 'map' && mapsLoaded && stops.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm z-[500] pointer-events-none">
                    <div className="text-center">
                       <MapIcon className="w-12 h-12 text-slate-300 mx-auto mb-2" />
