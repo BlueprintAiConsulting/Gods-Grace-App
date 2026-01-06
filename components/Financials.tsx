@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Job } from '../types';
 import { 
   DollarSign, 
@@ -9,7 +9,10 @@ import {
   BarChart3,
   Wallet,
   ArrowRight,
-  LineChart as LineChartIcon
+  LineChart as LineChartIcon,
+  Sparkles,
+  Loader2,
+  X
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -26,12 +29,16 @@ import {
   AreaChart,
   Area
 } from 'recharts';
+import { GoogleGenAI } from "@google/genai";
 
 interface FinancialsProps {
   jobs: Job[];
 }
 
 const Financials: React.FC<FinancialsProps> = ({ jobs }) => {
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   // Filter for completed jobs or those with actual revenue logged
   const financialJobs = useMemo(() => {
     return jobs.filter(j => j.status === 'Completed' || (j.actualRevenue && j.actualRevenue > 0));
@@ -102,12 +109,78 @@ const Financials: React.FC<FinancialsProps> = ({ jobs }) => {
 
   const PIE_COLORS = ['#143d2b', '#f4c430'];
 
+  const handleAnalyze = async () => {
+    const aistudio = (window as any).aistudio;
+    if (aistudio) {
+      const hasKey = await aistudio.hasSelectedApiKey();
+      if (!hasKey) await aistudio.openSelectKey();
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `Act as the CFO for a landscaping business. Analyze these financials:
+      
+      Total Revenue: $${totals.actRev}
+      Total Profit: $${totals.actProf}
+      Profit Margin: ${totals.actRev > 0 ? ((totals.actProf / totals.actRev) * 100).toFixed(1) : 0}%
+      Labor Costs: $${totals.actLabor}
+      Material Costs: $${totals.actMat}
+      
+      Compare against industry standards (target 40-50% margin).
+      Provide 3 bullet points: 
+      1. Overall Health Check
+      2. Greatest Strength
+      3. One Area for Cost Improvement`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt
+      });
+      setAiAnalysis(response.text);
+    } catch (e) {
+      console.error("Analysis failed", e);
+      setAiAnalysis("Analysis unavailable. Please check API settings.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-bold text-slate-900">Financial Intelligence</h2>
-        <p className="text-slate-500">Real-time profitability tracking and cost analysis.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+           <h2 className="text-2xl font-bold text-slate-900">Financial Intelligence</h2>
+           <p className="text-slate-500">Real-time profitability tracking and cost analysis.</p>
+        </div>
+        <button 
+          onClick={handleAnalyze}
+          disabled={isAnalyzing}
+          className="bg-[#143d2b] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-[#1a4f38] transition-all disabled:opacity-50"
+        >
+           {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-[#f4c430]" />}
+           AI Financial Analyst
+        </button>
       </div>
+
+      {aiAnalysis && (
+        <div className="bg-white p-6 rounded-2xl shadow-lg border border-[#f4c430]/30 relative overflow-hidden animate-in slide-in-from-top-4">
+           <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                 <div className="bg-[#f4c430] p-1.5 rounded-lg text-[#143d2b]">
+                    <Sparkles className="w-4 h-4" />
+                 </div>
+                 <h3 className="font-bold text-slate-800">CFO Analysis Report</h3>
+              </div>
+              <button onClick={() => setAiAnalysis(null)} className="text-slate-400 hover:text-slate-600">
+                 <X className="w-5 h-5" />
+              </button>
+           </div>
+           <div className="prose prose-sm prose-slate max-w-none">
+              <div className="whitespace-pre-wrap text-slate-600 font-medium leading-relaxed">{aiAnalysis}</div>
+           </div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

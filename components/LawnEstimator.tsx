@@ -38,6 +38,13 @@ const LawnEstimator: React.FC<LawnEstimatorProps> = ({ estimates, onSave }) => {
     return { estMins, totalHours, price };
   }, [formData]);
 
+  // Calculate dynamic average
+  const averageRevenue = useMemo(() => {
+    if (estimates.length === 0) return 0;
+    const total = estimates.reduce((acc, curr) => acc + curr.price, 0);
+    return total / estimates.length;
+  }, [estimates]);
+
   const handleSave = () => {
     if (!formData.clientName || !formData.address) return;
     
@@ -216,10 +223,10 @@ const LawnEstimator: React.FC<LawnEstimatorProps> = ({ estimates, onSave }) => {
             <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
               <div>
                 <h4 className="font-bold text-lg mb-1">Average Quoted Revenue</h4>
-                <p className="text-white/60 text-sm">Based on the last 30 estimations provided by Chad.</p>
+                <p className="text-white/60 text-sm">Based on {estimates.length} active estimations.</p>
               </div>
               <div className="flex items-end gap-2">
-                <span className="text-4xl font-bold text-[#f4c430]">$177.50</span>
+                <span className="text-4xl font-bold text-[#f4c430]">${averageRevenue.toFixed(2)}</span>
                 <span className="text-sm font-medium text-white/50 mb-1">/ mow avg</span>
               </div>
             </div>

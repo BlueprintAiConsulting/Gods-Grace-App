@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+
+import React, { useMemo, useState } from 'react';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -7,11 +8,15 @@ import {
   ArrowUpRight, 
   ArrowRight, 
   MapPin, 
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Sparkles,
+  Loader2,
+  X
 } from 'lucide-react';
 import { Job, DashboardStats } from '../types';
 import { STATUS_COLORS } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import { GoogleGenAI } from "@google/genai";
 
 interface DashboardProps {
   stats: DashboardStats;
@@ -19,6 +24,8 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ stats, jobs }) => {
+  const [aiBriefing, setAiBriefing] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   
   // Dynamic Data Calculation for Charts
   const jobTypeData = useMemo(() => {
@@ -43,6 +50,38 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, jobs }) => {
 
   const COLORS_LIST = ['#143d2b', '#f4c430', '#4a3728', '#22c55e', '#64748b'];
 
+  const handleGenerateBriefing = async () => {
+    const aistudio = (window as any).aistudio;
+    if (aistudio) {
+      const hasKey = await aistudio.hasSelectedApiKey();
+      if (!hasKey) await aistudio.openSelectKey();
+    }
+
+    setIsGenerating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `You are the Operations Manager for God's Grace Lawn & Landscape. 
+      Analyze today's dashboard stats:
+      - Total Estimated Revenue: $${stats.totalRevenue}
+      - Active Jobs: ${stats.activeJobs}
+      - Average Margin: ${stats.avgMargin.toFixed(1)}%
+      - Pending Follow-ups: ${stats.pendingFollowUps}
+      
+      Provide a concise 2-sentence "Daily Focus" briefing for the owner. Identify the most critical number to watch and suggest one immediate action.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt
+      });
+      setAiBriefing(response.text);
+    } catch (e) {
+      console.error("Briefing generation failed", e);
+      setAiBriefing("Unable to generate briefing. Please check your connection and API key.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -51,12 +90,40 @@ const Dashboard: React.FC<DashboardProps> = ({ stats, jobs }) => {
           <p className="text-slate-500">Welcome back! Here's what's happening today at God's Grace.</p>
         </div>
         <div className="flex gap-2">
-           <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2">
+           <button 
+             onClick={handleGenerateBriefing}
+             disabled={isGenerating}
+             className="px-4 py-2 bg-[#f4c430] text-[#143d2b] border border-[#f4c430] rounded-xl text-sm font-bold shadow-sm hover:bg-[#eac040] transition-colors flex items-center gap-2 disabled:opacity-50"
+           >
+             {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+             Smart Briefing
+           </button>
+           <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2 hidden md:flex">
              <CalendarIcon className="w-4 h-4" />
              View Full Schedule
            </button>
         </div>
       </div>
+
+      {aiBriefing && (
+        <div className="bg-gradient-to-r from-[#143d2b] to-[#1a4f38] p-6 rounded-2xl shadow-lg relative overflow-hidden animate-in slide-in-from-top-4">
+          <div className="relative z-10">
+             <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2 mb-2">
+                   <Sparkles className="w-5 h-5 text-[#f4c430]" />
+                   <h3 className="font-bold text-white text-sm uppercase tracking-widest">AI Daily Focus</h3>
+                </div>
+                <button onClick={() => setAiBriefing(null)} className="text-white/60 hover:text-white transition-colors">
+                   <X className="w-5 h-5" />
+                </button>
+             </div>
+             <p className="text-white font-medium text-lg leading-relaxed max-w-3xl">
+                {aiBriefing}
+             </p>
+          </div>
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

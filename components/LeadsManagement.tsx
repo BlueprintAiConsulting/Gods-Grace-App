@@ -14,10 +14,13 @@ import {
   Search,
   X,
   Save,
-  Upload
+  Upload,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { Job } from '../types';
 import { STATUS_COLORS } from '../constants';
+import { GoogleGenAI } from "@google/genai";
 
 interface LeadsManagementProps {
   jobs: Job[];
@@ -29,6 +32,10 @@ const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs, onAddLead, onIm
   const [filter, setFilter] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI Analysis State
+  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // New Lead State
   const [newLead, setNewLead] = useState<Partial<Job>>({
@@ -114,6 +121,43 @@ const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs, onAddLead, onIm
     reader.readAsText(file);
   };
 
+  const handleAnalyzePipeline = async () => {
+    const aistudio = (window as any).aistudio;
+    if (aistudio) {
+      const hasKey = await aistudio.hasSelectedApiKey();
+      if (!hasKey) await aistudio.openSelectKey();
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const counts = leads.reduce((acc: any, lead) => {
+        acc[lead.status] = (acc[lead.status] || 0) + 1;
+        return acc;
+      }, {});
+      
+      const totalPotential = leads.reduce((sum, l) => sum + (l.estRevenue || 0), 0);
+
+      const prompt = `Act as a Sales Manager. Analyze this pipeline:
+      - Total Leads: ${leads.length}
+      - Breakdown: ${JSON.stringify(counts)}
+      - Total Potential Revenue: $${totalPotential}
+      
+      Provide 2 specific, actionable coaching tips to unblock this pipeline and convert more leads this week. Be concise.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt
+      });
+      setAiAdvice(response.text);
+    } catch (e) {
+      console.error(e);
+      setAiAdvice("Unable to analyze pipeline at this time.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -121,7 +165,15 @@ const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs, onAddLead, onIm
           <h1 className="text-3xl font-black text-slate-900">Lead Pipeline</h1>
           <p className="text-slate-500 font-medium italic">"Every seed planted with grace becomes a harvest."</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+            <button 
+                onClick={handleAnalyzePipeline}
+                disabled={isAnalyzing}
+                className="bg-white border border-purple-200 text-purple-700 px-4 py-3 rounded-2xl font-bold hover:bg-purple-50 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+                {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {isAnalyzing ? 'Thinking...' : 'Pipeline Coach'}
+            </button>
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
             <button 
                 onClick={() => fileInputRef.current?.click()}
@@ -138,6 +190,20 @@ const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs, onAddLead, onIm
             </button>
         </div>
       </div>
+
+      {aiAdvice && (
+        <div className="bg-purple-50 border border-purple-100 p-6 rounded-3xl relative animate-in slide-in-from-top-4">
+           <div className="flex items-start justify-between mb-2">
+              <h3 className="font-bold text-purple-900 flex items-center gap-2">
+                 <Sparkles className="w-4 h-4" /> Coach's Corner
+              </h3>
+              <button onClick={() => setAiAdvice(null)} className="text-purple-400 hover:text-purple-700">
+                 <X className="w-5 h-5" />
+              </button>
+           </div>
+           <p className="text-sm text-purple-800 font-medium whitespace-pre-wrap">{aiAdvice}</p>
+        </div>
+      )}
 
       <div className="flex gap-4 overflow-x-auto pb-2">
         {['All', 'Lead', 'Quoted', 'Follow-Up Needed'].map((s) => (
