@@ -949,7 +949,10 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-black text-slate-900">Route Optimizer</h1>
+          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-2">
+            Route Optimizer 
+            <span className="bg-[#f4c430] text-[#143d2b] px-2 py-0.5 rounded text-xs uppercase tracking-widest font-black">BETA</span>
+          </h1>
           <p className="text-slate-500 font-medium">AI logistics with Google Maps integration.</p>
         </div>
         <div className="flex gap-2">

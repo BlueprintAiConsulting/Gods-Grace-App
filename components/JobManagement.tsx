@@ -31,7 +31,8 @@ import {
   CloudSun,
   Briefcase,
   ChevronDown,
-  Upload
+  Upload,
+  Save
 } from 'lucide-react';
 import { Job } from '../types';
 import { STATUS_COLORS } from '../constants';
@@ -39,7 +40,7 @@ import JobDetailsModal from './JobDetailsModal';
 
 interface JobManagementProps {
   jobs: Job[];
-  onAddJob: () => void;
+  onAddJob: (job: Job) => void;
   onUpdateJob: (job: Job) => void;
   onImportJobs?: (jobs: Job[]) => void;
 }
@@ -61,6 +62,17 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
   const [sortConfig, setSortConfig] = useState<{ key: 'nextActionDate'; direction: 'asc' | 'desc' | null }>({
     key: 'nextActionDate',
     direction: null
+  });
+
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newJobData, setNewJobData] = useState<Partial<Job>>({
+    clientName: '',
+    address: '',
+    cityArea: 'York',
+    jobType: 'Mow',
+    estRevenue: 0,
+    scheduledDate: new Date().toISOString().split('T')[0]
   });
 
   // Date Filter State
@@ -134,9 +146,6 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
 
       result = result.filter(job => {
         if (!job.nextActionDate) return false;
-        
-        // Handle timezone offsets by just taking the date part string comparison or creating date with local time
-        // Assuming YYYY-MM-DD string format from input
         const [year, month, day] = job.nextActionDate.split('-').map(Number);
         const actionDate = new Date(year, month - 1, day); 
         actionDate.setHours(0, 0, 0, 0);
@@ -144,19 +153,16 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
         if (dateFilter === 'Overdue') {
           return actionDate < today;
         }
-        
         if (dateFilter === 'Today') {
           return actionDate.getTime() === today.getTime();
         }
-
         if (dateFilter === 'This Week') {
           const startOfWeek = new Date(today);
-          startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+          startOfWeek.setDate(today.getDate() - today.getDay()); 
           const endOfWeek = new Date(today);
-          endOfWeek.setDate(today.getDate() + (6 - today.getDay())); // Saturday
+          endOfWeek.setDate(today.getDate() + (6 - today.getDay())); 
           return actionDate >= startOfWeek && actionDate <= endOfWeek;
         }
-
         if (dateFilter === 'Next Week') {
           const startOfNext = new Date(today);
           startOfNext.setDate(today.getDate() - today.getDay() + 7);
@@ -164,7 +170,6 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           endOfNext.setDate(today.getDate() - today.getDay() + 13);
           return actionDate >= startOfNext && actionDate <= endOfNext;
         }
-
         return true;
       });
     }
@@ -207,7 +212,6 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
   };
 
   const isBadWeather = (w: WeatherData) => {
-    // Codes > 50 generally mean precipitation/fog
     return w.conditionCode >= 50 || w.precip > 0.1 || w.windSpeed > 20;
   };
 
@@ -230,10 +234,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
         const line = lines[i].trim();
         if (!line) continue;
         
-        // Simple CSV splitting (doesn't handle commas inside quotes)
         const values = line.split(',');
-        
-        // Helper to get value by rough header match
         const getValue = (keyPart: string) => {
           const index = headers.findIndex(h => h.includes(keyPart));
           return index >= 0 ? values[index]?.trim() : '';
@@ -254,8 +255,8 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           scheduledDate: getValue('date') || new Date().toISOString().split('T')[0],
           estRevenue: parseFloat(getValue('revenue')) || 0,
           estCost: parseFloat(getValue('cost')) || 0,
-          estProfit: 0, // Recalc below
-          estMargin: 0, // Recalc below
+          estProfit: 0,
+          estMargin: 0,
           paymentStatus: 'Unpaid',
           notes: '',
           followUpCount: 0,
@@ -263,7 +264,6 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           recurringServicePitched: false,
         };
 
-        // Calcs
         job.estProfit = job.estRevenue - job.estCost;
         job.estMargin = job.estRevenue ? Math.round((job.estProfit / job.estRevenue) * 100) : 0;
 
@@ -276,10 +276,41 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
         alert("No valid jobs found in CSV.");
       }
       
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file);
+  };
+
+  const handleCreateJob = (e: React.FormEvent) => {
+     e.preventDefault();
+     const job: Job = {
+       id: `JOB-${Date.now().toString().slice(-4)}`,
+       clientName: newJobData.clientName || 'New Client',
+       phone: '',
+       email: '',
+       address: newJobData.address || '',
+       cityArea: newJobData.cityArea || 'York',
+       description: 'Manual Service Entry',
+       jobType: newJobData.jobType || 'Mow',
+       status: 'Scheduled',
+       priority: 'Medium',
+       leadSource: 'Manual',
+       scheduledDate: newJobData.scheduledDate,
+       nextActionDate: newJobData.scheduledDate, // Set next action to schedule date
+       nextAction: 'Perform Service',
+       estRevenue: newJobData.estRevenue || 0,
+       estCost: 0,
+       estProfit: 0,
+       estMargin: 0,
+       paymentStatus: 'Unpaid',
+       notes: '',
+       followUpCount: 0,
+       jobWalkthroughComplete: true,
+       recurringServicePitched: false,
+     };
+     onAddJob(job);
+     setIsModalOpen(false);
+     setNewJobData({ clientName: '', address: '', cityArea: 'York', jobType: 'Mow', estRevenue: 0, scheduledDate: new Date().toISOString().split('T')[0] });
   };
 
   return (
@@ -310,7 +341,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           </button>
 
           <button 
-            onClick={onAddJob}
+            onClick={() => setIsModalOpen(true)}
             className="bg-[#143d2b] text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 hover:bg-[#1a4f38] transition-all shadow-lg shadow-[#143d2b]/20"
           >
             <Plus className="w-5 h-5" />
@@ -628,6 +659,78 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
       </div>
 
       {selectedJob && <JobDetailsModal job={selectedJob} onClose={() => setSelectedJob(null)} />}
+
+      {/* New Service Entry Modal */}
+      {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+             <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                   <h3 className="text-xl font-black text-slate-900">New Service Entry</h3>
+                   <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                      <X className="w-5 h-5 text-slate-500" />
+                   </button>
+                </div>
+                <form onSubmit={handleCreateJob} className="space-y-4">
+                   <div>
+                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Client Name</label>
+                       <input 
+                          required
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-[#143d2b]"
+                          value={newJobData.clientName}
+                          onChange={e => setNewJobData({...newJobData, clientName: e.target.value})}
+                          placeholder="Client Name"
+                       />
+                   </div>
+                   <div className="grid grid-cols-2 gap-4">
+                       <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Service Type</label>
+                          <select 
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
+                              value={newJobData.jobType}
+                              onChange={e => setNewJobData({...newJobData, jobType: e.target.value})}
+                          >
+                              <option value="Mow">Mow</option>
+                              <option value="Mulch">Mulch</option>
+                              <option value="Clean Up">Clean Up</option>
+                              <option value="Paver Patio">Paver Patio</option>
+                              <option value="Other">Other</option>
+                          </select>
+                       </div>
+                       <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Est. Revenue ($)</label>
+                          <input 
+                              type="number"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
+                              value={newJobData.estRevenue}
+                              onChange={e => setNewJobData({...newJobData, estRevenue: parseFloat(e.target.value)})}
+                          />
+                       </div>
+                   </div>
+                   <div>
+                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Scheduled Date</label>
+                       <input 
+                          type="date"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
+                          value={newJobData.scheduledDate}
+                          onChange={e => setNewJobData({...newJobData, scheduledDate: e.target.value})}
+                       />
+                   </div>
+                    <div>
+                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Address</label>
+                       <input 
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
+                          value={newJobData.address}
+                          onChange={e => setNewJobData({...newJobData, address: e.target.value})}
+                          placeholder="Street Address"
+                       />
+                   </div>
+                   <button type="submit" className="w-full bg-[#143d2b] text-white py-4 rounded-xl font-bold text-sm shadow-lg shadow-[#143d2b]/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+                       <Save className="w-4 h-4" /> Create Service Job
+                   </button>
+                </form>
+             </div>
+          </div>
+      )}
     </div>
   );
 };

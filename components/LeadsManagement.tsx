@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Plus, 
   Phone, 
@@ -11,21 +11,108 @@ import {
   MoreVertical,
   Clock,
   UserPlus,
-  Search
+  Search,
+  X,
+  Save,
+  Upload
 } from 'lucide-react';
 import { Job } from '../types';
 import { STATUS_COLORS } from '../constants';
 
 interface LeadsManagementProps {
   jobs: Job[];
+  onAddLead: (lead: Job) => void;
+  onImportLeads?: (leads: Job[]) => void;
 }
 
-const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs }) => {
+const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs, onAddLead, onImportLeads }) => {
   const [filter, setFilter] = useState('All');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // New Lead State
+  const [newLead, setNewLead] = useState<Partial<Job>>({
+    clientName: '',
+    phone: '',
+    email: '',
+    leadSource: 'Call',
+    description: '',
+    notes: ''
+  });
   
   // Filter for items that are not yet "Active Jobs" (Scheduled/In Progress/Completed)
   const leads = jobs.filter(j => ['Lead', 'Quoted', 'Follow-Up Needed', 'Rejected'].includes(j.status));
   const filteredLeads = filter === 'All' ? leads : leads.filter(l => l.status === filter);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const lead: Job = {
+        id: `LEAD-${Date.now()}`,
+        clientName: newLead.clientName || 'New Lead',
+        phone: newLead.phone || '',
+        email: newLead.email || '',
+        address: '', // Address often unknown at lead stage
+        cityArea: 'York',
+        description: newLead.description || 'New Inquiry',
+        jobType: 'General',
+        status: 'Lead',
+        priority: 'Medium',
+        leadSource: newLead.leadSource || 'Manual Entry',
+        lastContactDate: new Date().toISOString().split('T')[0],
+        nextAction: 'Initial Contact',
+        nextActionDate: new Date().toISOString().split('T')[0],
+        estRevenue: 0,
+        estCost: 0,
+        estProfit: 0,
+        estMargin: 0,
+        paymentStatus: 'Unpaid',
+        notes: newLead.notes || '',
+        followUpCount: 0,
+        jobWalkthroughComplete: false,
+        recurringServicePitched: false,
+    };
+    onAddLead(lead);
+    setIsModalOpen(false);
+    setNewLead({ clientName: '', phone: '', email: '', leadSource: 'Call', description: '', notes: '' });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      const lines = text.split('\n');
+      const newJobs: Job[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const values = line.split(',');
+        // Basic CSV mapping
+        const job: Job = {
+          id: `IMP-${Date.now()}-${i}`,
+          clientName: values[0] || 'Unknown',
+          phone: values[1] || '',
+          email: values[2] || '',
+          address: '',
+          cityArea: 'York',
+          description: 'Imported Lead',
+          jobType: 'General',
+          status: 'Lead',
+          priority: 'Medium',
+          leadSource: 'CSV Import',
+          estRevenue: 0, estCost: 0, estProfit: 0, estMargin: 0,
+          paymentStatus: 'Unpaid', notes: '', followUpCount: 0,
+          jobWalkthroughComplete: false, recurringServicePitched: false
+        };
+        newJobs.push(job);
+      }
+      if (onImportLeads) onImportLeads(newJobs);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -34,10 +121,22 @@ const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs }) => {
           <h1 className="text-3xl font-black text-slate-900">Lead Pipeline</h1>
           <p className="text-slate-500 font-medium italic">"Every seed planted with grace becomes a harvest."</p>
         </div>
-        <button className="bg-[#f4c430] text-[#143d2b] px-6 py-3 rounded-2xl font-black shadow-lg shadow-[#f4c430]/20 flex items-center gap-2 hover:scale-[1.02] transition-all">
-          <UserPlus className="w-5 h-5" />
-          Capture New Lead
-        </button>
+        <div className="flex items-center gap-2">
+            <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
+            <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-white border border-slate-200 text-slate-600 px-4 py-3 rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center gap-2"
+            >
+                <Upload className="w-5 h-5" /> Import CSV
+            </button>
+            <button 
+                onClick={() => setIsModalOpen(true)}
+                className="bg-[#f4c430] text-[#143d2b] px-6 py-3 rounded-2xl font-black shadow-lg shadow-[#f4c430]/20 flex items-center gap-2 hover:scale-[1.02] transition-all"
+            >
+            <UserPlus className="w-5 h-5" />
+            Capture New Lead
+            </button>
+        </div>
       </div>
 
       <div className="flex gap-4 overflow-x-auto pb-2">
@@ -132,6 +231,69 @@ const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs }) => {
           <p className="text-slate-500 text-sm max-w-xs mx-auto mt-1">
             There are no leads matching the "{filter}" status currently in the pipeline.
           </p>
+        </div>
+      )}
+
+      {/* Capture Lead Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-black text-slate-900">Capture New Lead</h3>
+                    <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                        <X className="w-5 h-5 text-slate-500" />
+                    </button>
+                </div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Client Name</label>
+                        <input 
+                           required
+                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-[#143d2b]"
+                           value={newLead.clientName}
+                           onChange={e => setNewLead({...newLead, clientName: e.target.value})}
+                           placeholder="e.g. John Doe"
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone</label>
+                             <input 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
+                                value={newLead.phone}
+                                onChange={e => setNewLead({...newLead, phone: e.target.value})}
+                                placeholder="(555) 555-5555"
+                             />
+                        </div>
+                        <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Lead Source</label>
+                             <select 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
+                                value={newLead.leadSource}
+                                onChange={e => setNewLead({...newLead, leadSource: e.target.value})}
+                             >
+                                 <option value="Call">Phone Call</option>
+                                 <option value="Facebook">Facebook</option>
+                                 <option value="Google">Google Search</option>
+                                 <option value="Referral">Referral</option>
+                             </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Interest Description</label>
+                        <textarea 
+                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
+                           value={newLead.description}
+                           onChange={e => setNewLead({...newLead, description: e.target.value})}
+                           placeholder="What service are they interested in?"
+                           rows={3}
+                        />
+                    </div>
+                    <button type="submit" className="w-full bg-[#143d2b] text-white py-4 rounded-xl font-bold text-sm shadow-lg shadow-[#143d2b]/20 hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+                        <Save className="w-4 h-4" /> Save Lead
+                    </button>
+                </form>
+            </div>
         </div>
       )}
     </div>

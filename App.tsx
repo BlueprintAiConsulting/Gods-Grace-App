@@ -44,6 +44,11 @@ const App: React.FC = () => {
     );
   }, [jobs, searchQuery]);
 
+  // Core Logic: Add New Job/Lead
+  const handleAddJob = (newJob: Job) => {
+    setJobs(prev => [newJob, ...prev]);
+  };
+
   const handleUpdateJob = (updatedJob: Job) => {
     setJobs(prevJobs => prevJobs.map(j => j.id === updatedJob.id ? updatedJob : j));
   };
@@ -53,7 +58,7 @@ const App: React.FC = () => {
     const existingIds = new Set(jobs.map(j => j.id));
     const uniqueNewJobs = newJobs.filter(j => !existingIds.has(j.id));
     setJobs(prev => [...prev, ...uniqueNewJobs]);
-    alert(`Successfully imported ${uniqueNewJobs.length} new jobs.`);
+    alert(`Successfully imported ${uniqueNewJobs.length} new records.`);
   };
 
   const handleOpenApiKeySettings = async () => {
@@ -194,11 +199,17 @@ const App: React.FC = () => {
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-8">
           {activeView === 'dashboard' && <Dashboard stats={stats} jobs={jobs} />}
-          {activeView === 'leads' && <LeadsManagement jobs={jobs} />}
+          {activeView === 'leads' && (
+            <LeadsManagement 
+              jobs={jobs} 
+              onAddLead={handleAddJob} 
+              onImportLeads={handleImportJobs}
+            />
+          )}
           {activeView === 'jobs' && (
             <JobManagement 
               jobs={filteredJobs} 
-              onAddJob={() => alert('New Job Entry Logic Coming Soon!')} 
+              onAddJob={handleAddJob} 
               onUpdateJob={handleUpdateJob}
               onImportJobs={handleImportJobs}
             />
