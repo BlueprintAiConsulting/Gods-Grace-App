@@ -19,7 +19,9 @@ import {
   Clock,
   Car,
   GripVertical,
-  Key
+  Key,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { Job } from '../types';
@@ -97,8 +99,8 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
   
   // Maps State
   const [mapsLoaded, setMapsLoaded] = useState(false);
-  const [keyReady, setKeyReady] = useState(false);
   const [authError, setAuthError] = useState(false);
+  const [scriptLoadError, setScriptLoadError] = useState(false);
   
   // API Route Data
   const [optimizedPlan, setOptimizedPlan] = useState<string | null>(null);
@@ -121,38 +123,47 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
 
   // Robust Google Maps Script Loader
   const loadMapsScript = () => {
-    // 1. Check if already loaded
-    if ((window as any).google && (window as any).google.maps) {
+    // 1. Check if already loaded and healthy
+    if ((window as any).google && (window as any).google.maps && !authError) {
       setMapsLoaded(true);
       return;
     }
 
-    // 2. Check if script tag is already in DOM
-    const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+    // 2. Clean up any failed/old script tags
+    const existingScript = document.getElementById('google-maps-script');
     if (existingScript) {
-       // If auth error happened previously, we might need to re-inject.
-       // But usually, existing script means it's trying to load.
-       return; 
+       existingScript.remove();
     }
 
-    // 3. Verify API Key Existence
+    // 3. Verify API Key Existence & Format
     const key = process.env.API_KEY;
-    if (key && key !== 'undefined') {
+    
+    // Check for valid looking key (Starts with AIza) to prevent InvalidKeyMapError
+    if (key && key !== 'undefined' && key.startsWith('AIza')) {
+      setScriptLoadError(false);
+      setAuthError(false);
+      
       const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,geometry`;
+      script.id = 'google-maps-script';
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places,geometry&v=weekly`;
       script.async = true;
       script.defer = true;
+      
       script.onload = () => {
         setMapsLoaded(true);
         if (error?.includes("Google Maps SDK")) setError(null);
       };
+      
       script.onerror = () => {
-        console.error("Failed to load Google Maps SDK");
+        console.error("Failed to load Google Maps SDK (Network Error)");
+        setScriptLoadError(true);
         setError("Failed to connect to Google Maps. Please check your internet connection.");
       };
+      
       document.head.appendChild(script);
     } else {
-      console.warn("Attempted to load Maps SDK without a valid API Key");
+      console.warn("API Key missing or invalid format (must start with AIza)");
+      // Don't set error immediately, let the UI show "Connect API Key" button
     }
   };
 
@@ -163,18 +174,17 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       if (aistudio) {
         const has = await aistudio.hasSelectedApiKey();
         if (has) {
-          setKeyReady(true);
           loadMapsScript();
         }
       }
     };
     
     // Register global auth failure handler
+    // This fires if the key is valid format but rejected by Google (e.g. billing disabled, Maps API not enabled)
     (window as any).gm_authFailure = () => {
        console.error("Google Maps Auth Failure");
        setAuthError(true);
        setMapsLoaded(false);
-       setError("Google Maps API Key Invalid or Not Enabled.");
     };
 
     checkKey();
@@ -189,17 +199,16 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     const aistudio = getAiStudio();
     if (aistudio) {
        await aistudio.openSelectKey();
-       setKeyReady(true);
-       setAuthError(false);
-       setError(null);
-       
-       // Remove any old/failed scripts
-       const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
-       if (existingScript) existingScript.remove();
-       
-       // Reload
-       loadMapsScript();
+       // Add short delay to ensure env is updated, then reload
+       setTimeout(() => loadMapsScript(), 500);
     }
+  };
+
+  const handleRetryLoad = () => {
+     setAuthError(false);
+     setScriptLoadError(false);
+     setMapsLoaded(false);
+     loadMapsScript();
   };
 
   // Calculate Route Metrics (Fallback if API fails, or pre-optimization)
@@ -280,7 +289,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
   // Reverse Geocode (Map Click -> Address)
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
     // Strategy 1: Google Maps JS SDK Geocoder (Client-side)
-    if (mapsLoaded && (window as any).google) {
+    if (mapsLoaded && (window as any).google && !authError) {
       try {
         const geocoder = new (window as any).google.maps.Geocoder();
         const response = await geocoder.geocode({ location: { lat, lng } });
@@ -523,7 +532,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
 
   // Strategy 1: Google Maps JS SDK (Robust, Client-side)
   const geocodeWithGoogle = async (address: string): Promise<{lat: number, lng: number} | null> => {
-    if (mapsLoaded && (window as any).google) {
+    if (mapsLoaded && (window as any).google && !authError) {
       try {
         const geocoder = new (window as any).google.maps.Geocoder();
         const response = await geocoder.geocode({ address });
@@ -612,7 +621,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
   // Main Geocoding Orchestrator
   const geocodeAddress = async (address: string): Promise<{lat: number, lng: number} | null> => {
     // Try Google first if loaded
-    if (mapsLoaded) {
+    if (mapsLoaded && !authError) {
       const googleResult = await geocodeWithGoogle(address);
       if (googleResult) return googleResult;
     }
@@ -835,6 +844,10 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     // 2. Ensure Maps Loaded
     if (!mapsLoaded) {
       loadMapsScript();
+      if (authError) {
+        setError("Maps API authentication failed. Please check your API key settings.");
+        return;
+      }
       setError("Initializing Google Maps... Please wait a moment and try again.");
       return;
     }
@@ -921,7 +934,12 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       }
     } catch (err: any) {
       console.error(err);
-      setError("Optimization failed. " + (err.message || "Verify addresses and API key."));
+      if (err.message && err.message.includes('REQUEST_DENIED')) {
+         setAuthError(true);
+         setError("Maps API Request Denied. Please ensure 'Directions API' is enabled in Google Cloud Console.");
+      } else {
+         setError("Optimization failed. " + (err.message || "Verify addresses and API key."));
+      }
     } finally {
       setIsOptimizing(false);
     }
@@ -1116,26 +1134,54 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
              ></div>
 
              {/* Map Not Loaded State */}
-             {viewMode === 'map' && (!mapsLoaded || authError) && (
-               <div className="absolute inset-0 flex items-center justify-center bg-slate-50 z-10">
-                 <div className="text-center p-8 max-w-sm">
+             {viewMode === 'map' && (!mapsLoaded || authError || scriptLoadError) && (
+               <div className="absolute inset-0 flex items-center justify-center bg-slate-50 z-10 p-6">
+                 <div className="text-center max-w-sm">
                    {authError ? (
                      <>
                       <div className="bg-rose-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                         <AlertCircle className="w-8 h-8 text-rose-600" />
                       </div>
                       <h3 className="font-black text-slate-800 text-lg mb-2">Maps Authentication Failed</h3>
-                      <p className="text-sm text-slate-500 mb-6">
-                        Your API key may be invalid or does not have the Google Maps JavaScript API enabled.
+                      <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                        Your API key was rejected. Please ensure these APIs are enabled in your <a href="https://console.cloud.google.com/google/maps-apis/api-list" target="_blank" className="underline font-bold text-[#143d2b]">Google Cloud Console</a>:
                       </p>
-                      <button 
-                        onClick={handleConnectKey}
-                        className="bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center gap-2 mx-auto"
-                      >
-                        <Key className="w-4 h-4" /> Reconnect API Key
-                      </button>
+                      <ul className="text-left text-xs font-medium text-slate-600 mb-6 bg-white p-4 rounded-xl border border-slate-100 space-y-2">
+                        <li className="flex items-center gap-2"><CheckCircle2 className="w-3 h-3 text-emerald-500" /> Maps JavaScript API</li>
+                        <li className="flex items-center gap-2"><CheckCircle2 className="w-3 h-3 text-emerald-500" /> Directions API</li>
+                        <li className="flex items-center gap-2"><CheckCircle2 className="w-3 h-3 text-emerald-500" /> Geocoding API</li>
+                        <li className="flex items-center gap-2"><CheckCircle2 className="w-3 h-3 text-emerald-500" /> Places API (New)</li>
+                      </ul>
+                      <div className="flex gap-2 justify-center">
+                        <button 
+                          onClick={handleConnectKey}
+                          className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center gap-2"
+                        >
+                          <Key className="w-3 h-3" /> Update Key
+                        </button>
+                         <button 
+                          onClick={handleRetryLoad}
+                          className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors flex items-center gap-2"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Retry
+                        </button>
+                      </div>
                      </>
-                   ) : !keyReady ? (
+                   ) : scriptLoadError ? (
+                      <>
+                        <div className="bg-rose-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                           <AlertCircle className="w-8 h-8 text-rose-600" />
+                        </div>
+                        <h3 className="font-black text-slate-800 text-lg mb-2">Network Error</h3>
+                        <p className="text-sm text-slate-500 mb-6">Unable to load Google Maps SDK. Please check your connection.</p>
+                        <button 
+                          onClick={handleRetryLoad}
+                          className="bg-[#143d2b] text-white px-6 py-3 rounded-xl text-sm font-bold shadow-lg hover:scale-105 transition-transform flex items-center gap-2 mx-auto"
+                        >
+                          <RefreshCw className="w-4 h-4" /> Retry Connection
+                        </button>
+                      </>
+                   ) : (
                      <>
                        <div className="bg-amber-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                         <MapPin className="w-8 h-8 text-amber-600" />
@@ -1151,11 +1197,6 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
                         <Key className="w-4 h-4" /> Connect API Key
                       </button>
                      </>
-                   ) : (
-                     <div className="flex flex-col items-center">
-                       <Loader2 className="w-8 h-8 animate-spin text-[#143d2b] mb-2" />
-                       <p className="text-sm font-bold text-slate-500">Loading Maps SDK...</p>
-                     </div>
                    )}
                  </div>
                </div>
