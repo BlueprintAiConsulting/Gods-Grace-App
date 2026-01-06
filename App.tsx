@@ -16,8 +16,8 @@ import {
   Map,
   Key
 } from 'lucide-react';
-import { Job, ViewType } from './types';
-import { mockJobs, getStats } from './services/dataService';
+import { Job, ViewType, MowEstimate, SavedMulchEstimate, SavedLandscapeEstimate } from './types';
+import { mockJobs, getStats, mockEstimates } from './services/dataService';
 import Dashboard from './components/Dashboard';
 import JobManagement from './components/JobManagement';
 import LeadsManagement from './components/LeadsManagement';
@@ -33,6 +33,11 @@ const App: React.FC = () => {
   const [jobs, setJobs] = useState<Job[]>(mockJobs);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Lifted State for Bid Center Persistence
+  const [mowEstimates, setMowEstimates] = useState<MowEstimate[]>(mockEstimates);
+  const [mulchEstimates, setMulchEstimates] = useState<SavedMulchEstimate[]>([]);
+  const [landscapeEstimates, setLandscapeEstimates] = useState<SavedLandscapeEstimate[]>([]);
 
   const stats = useMemo(() => getStats(jobs), [jobs]);
 
@@ -60,6 +65,11 @@ const App: React.FC = () => {
     setJobs(prev => [...prev, ...uniqueNewJobs]);
     alert(`Successfully imported ${uniqueNewJobs.length} new records.`);
   };
+
+  // Bid Center Handlers
+  const handleAddMowEstimate = (est: MowEstimate) => setMowEstimates(prev => [est, ...prev]);
+  const handleAddMulchEstimate = (est: SavedMulchEstimate) => setMulchEstimates(prev => [est, ...prev]);
+  const handleAddLandscapeEstimate = (est: SavedLandscapeEstimate) => setLandscapeEstimates(prev => [est, ...prev]);
 
   const handleOpenApiKeySettings = async () => {
     const aistudio = (window as any).aistudio;
@@ -215,7 +225,16 @@ const App: React.FC = () => {
             />
           )}
           {activeView === 'receipts' && <ReceiptUploader />}
-          {activeView === 'estimators' && <Estimators />}
+          {activeView === 'estimators' && (
+            <Estimators 
+              mowEstimates={mowEstimates}
+              onAddMowEstimate={handleAddMowEstimate}
+              mulchEstimates={mulchEstimates}
+              onAddMulchEstimate={handleAddMulchEstimate}
+              landscapeEstimates={landscapeEstimates}
+              onAddLandscapeEstimate={handleAddLandscapeEstimate}
+            />
+          )}
           {activeView === 'optimizer' && <RouteOptimizer jobs={jobs} />}
           {activeView === 'schedule' && <Schedule jobs={filteredJobs} />}
           {activeView === 'financials' && <Financials jobs={filteredJobs} />}

@@ -1,12 +1,28 @@
 
 import React, { useState } from 'react';
-import { EstimatorSubView } from '../types';
+import { EstimatorSubView, MowEstimate, SavedMulchEstimate, SavedLandscapeEstimate } from '../types';
 import LawnEstimator from './LawnEstimator';
 import MulchEstimator from './MulchEstimator';
 import LandscapingEstimator from './LandscapingEstimator';
 import { Scissors, Layers, TreePine } from 'lucide-react';
 
-const Estimators: React.FC = () => {
+interface EstimatorsProps {
+  mowEstimates: MowEstimate[];
+  onAddMowEstimate: (est: MowEstimate) => void;
+  mulchEstimates: SavedMulchEstimate[];
+  onAddMulchEstimate: (est: SavedMulchEstimate) => void;
+  landscapeEstimates: SavedLandscapeEstimate[];
+  onAddLandscapeEstimate: (est: SavedLandscapeEstimate) => void;
+}
+
+const Estimators: React.FC<EstimatorsProps> = ({ 
+  mowEstimates, 
+  onAddMowEstimate, 
+  mulchEstimates, 
+  onAddMulchEstimate, 
+  landscapeEstimates, 
+  onAddLandscapeEstimate 
+}) => {
   const [activeTab, setActiveTab] = useState<EstimatorSubView>('mow');
 
   return (
@@ -53,9 +69,24 @@ const Estimators: React.FC = () => {
       </div>
 
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-        {activeTab === 'mow' && <LawnEstimator />}
-        {activeTab === 'mulch' && <MulchEstimator />}
-        {activeTab === 'landscape' && <LandscapingEstimator />}
+        {activeTab === 'mow' && (
+          <LawnEstimator 
+            estimates={mowEstimates} 
+            onSave={onAddMowEstimate} 
+          />
+        )}
+        {activeTab === 'mulch' && (
+          <MulchEstimator 
+            history={mulchEstimates} 
+            onSave={onAddMulchEstimate} 
+          />
+        )}
+        {activeTab === 'landscape' && (
+          <LandscapingEstimator 
+            history={landscapeEstimates} 
+            onSave={onAddLandscapeEstimate} 
+          />
+        )}
       </div>
     </div>
   );

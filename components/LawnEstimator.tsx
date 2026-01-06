@@ -14,11 +14,13 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { MowEstimate } from '../types';
-import { mockEstimates } from '../services/dataService';
 
-const LawnEstimator: React.FC = () => {
-  const [estimates, setEstimates] = useState<MowEstimate[]>(mockEstimates);
-  
+interface LawnEstimatorProps {
+  estimates: MowEstimate[];
+  onSave: (est: MowEstimate) => void;
+}
+
+const LawnEstimator: React.FC<LawnEstimatorProps> = ({ estimates, onSave }) => {
   // New Estimate Form State
   const [formData, setFormData] = useState({
     clientName: '',
@@ -52,7 +54,7 @@ const LawnEstimator: React.FC = () => {
       estimator: 'Admin'
     };
 
-    setEstimates([newEst, ...estimates]);
+    onSave(newEst);
     setFormData({ clientName: '', address: '', zip: '', acreage: 0, pricePerAcre: 75, minutesPerAcre: 60 });
   };
 

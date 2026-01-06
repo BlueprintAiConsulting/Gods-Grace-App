@@ -14,17 +14,14 @@ import {
   Save,
   CheckCircle2
 } from 'lucide-react';
-import { MulchBed } from '../types';
+import { MulchBed, SavedMulchEstimate } from '../types';
 
-interface SavedMulchEstimate {
-  id: string;
-  date: string;
-  totalYards: number;
-  totalCost: number;
-  bedCount: number;
+interface MulchEstimatorProps {
+  history: SavedMulchEstimate[];
+  onSave: (est: SavedMulchEstimate) => void;
 }
 
-const MulchEstimator: React.FC = () => {
+const MulchEstimator: React.FC<MulchEstimatorProps> = ({ history, onSave }) => {
   const [beds, setBeds] = useState<MulchBed[]>([
     { id: '1', name: 'Front Bed', sqft: 200, depth: 4 }
   ]);
@@ -36,8 +33,6 @@ const MulchEstimator: React.FC = () => {
     clientName: '',
     address: ''
   });
-
-  const [history, setHistory] = useState<SavedMulchEstimate[]>([]);
 
   const addBed = () => {
     setBeds([...beds, { id: Date.now().toString(), name: `Area ${beds.length + 1}`, sqft: 0, depth: 4 }]);
@@ -79,7 +74,7 @@ const MulchEstimator: React.FC = () => {
       totalCost: totals.grandTotal,
       bedCount: beds.length
     };
-    setHistory([newEstimate, ...history]);
+    onSave(newEstimate);
   };
 
   return (

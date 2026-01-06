@@ -64,6 +64,22 @@ export interface MowEstimate {
   estimator: string;
 }
 
+export interface SavedMulchEstimate {
+  id: string;
+  date: string;
+  totalYards: number;
+  totalCost: number;
+  bedCount: number;
+}
+
+export interface SavedLandscapeEstimate {
+  id: string;
+  date: string;
+  totalCost: number;
+  itemCount: number;
+  totalHours: number;
+}
+
 export interface MulchBed {
   id: string;
   name: string;

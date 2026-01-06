@@ -200,9 +200,12 @@ const LeadsManagement: React.FC<LeadsManagementProps> = ({ jobs, onAddLead, onIm
                     <span>Next Date: {lead.nextActionDate || 'TBD'}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button className="flex-1 bg-slate-900 text-white py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
+                    <a 
+                      href={`tel:${lead.phone}`}
+                      className="flex-1 bg-slate-900 text-white py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors"
+                    >
                       <Phone className="w-4 h-4" /> Call Lead
-                    </button>
+                    </a>
                     <button className="flex-1 border-2 border-slate-100 text-slate-600 py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
                       <Calendar className="w-4 h-4" /> Log Contact
                     </button>

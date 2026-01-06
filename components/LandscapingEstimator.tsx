@@ -13,17 +13,14 @@ import {
   History, 
   CheckCircle2 
 } from 'lucide-react';
-import { LaborTask, MaterialItem } from '../types';
+import { LaborTask, MaterialItem, SavedLandscapeEstimate } from '../types';
 
-interface SavedLandscapeEstimate {
-  id: string;
-  date: string;
-  totalCost: number;
-  itemCount: number;
-  totalHours: number;
+interface LandscapingEstimatorProps {
+  history: SavedLandscapeEstimate[];
+  onSave: (est: SavedLandscapeEstimate) => void;
 }
 
-const LandscapingEstimator: React.FC = () => {
+const LandscapingEstimator: React.FC<LandscapingEstimatorProps> = ({ history, onSave }) => {
   const [laborTasks, setLaborTasks] = useState<LaborTask[]>([
     { id: '1', task: 'weeding and mulching', crewSize: 2, hoursPerPerson: 8, hourlyRate: 40 }
   ]);
@@ -33,7 +30,6 @@ const LandscapingEstimator: React.FC = () => {
     { id: '3', item: 'Sand', qty: 10, unit: 'bags', unitCost: 5 },
     { id: '4', item: 'Decorative Stone', qty: 5, unit: 'bags', unitCost: 4 }
   ]);
-  const [history, setHistory] = useState<SavedLandscapeEstimate[]>([]);
 
   const addLaborTask = () => {
     setLaborTasks([...laborTasks, { 
@@ -87,7 +83,7 @@ const LandscapingEstimator: React.FC = () => {
       itemCount: laborTasks.length + materialItems.length,
       totalHours: totals.totalHours
     };
-    setHistory([newEstimate, ...history]);
+    onSave(newEstimate);
   };
 
   return (

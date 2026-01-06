@@ -8,31 +8,31 @@ import {
   ExternalLink, 
   Mail, 
   PhoneCall, 
-  MapPin,
-  Clock,
-  ChevronRight,
-  User,
-  Search,
-  CheckCircle2,
-  AlertCircle,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  Calendar,
-  X,
-  Cloud,
-  Sun,
-  CloudRain,
-  CloudSnow,
-  CloudLightning,
-  Wind,
-  Droplets,
-  Thermometer,
-  CloudSun,
-  Briefcase,
-  ChevronDown,
-  Upload,
-  Save
+  MapPin, 
+  Clock, 
+  ChevronRight, 
+  User, 
+  Search, 
+  CheckCircle2, 
+  AlertCircle, 
+  ArrowUpDown, 
+  ArrowUp, 
+  ArrowDown, 
+  Calendar, 
+  X, 
+  Cloud, 
+  Sun, 
+  CloudRain, 
+  CloudSnow, 
+  CloudLightning, 
+  Wind, 
+  Droplets, 
+  Thermometer, 
+  CloudSun, 
+  Briefcase, 
+  ChevronDown, 
+  Upload, 
+  Save 
 } from 'lucide-react';
 import { Job } from '../types';
 import { STATUS_COLORS } from '../constants';
@@ -524,7 +524,11 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredAndSorted.map((job) => (
-                <tr key={job.id} className="group hover:bg-slate-50/50 transition-colors">
+                <tr 
+                  key={job.id} 
+                  onClick={() => setSelectedJob(job)}
+                  className="group hover:bg-slate-50/50 transition-colors cursor-pointer"
+                >
                   <td className="px-6 py-5">
                     <div className="flex flex-col">
                       <span className="text-xs font-bold text-[#143d2b] mb-1">{job.id}</span>
@@ -627,7 +631,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                         </button>
                       )}
                       <button 
-                        onClick={() => setSelectedJob(job)}
+                        onClick={(e) => { e.stopPropagation(); setSelectedJob(job); }}
                         title="View Detailed Master Sheet" 
                         className="p-2 bg-[#143d2b] text-white rounded-xl shadow-lg shadow-[#143d2b]/20 transition-all hover:scale-110"
                       >
