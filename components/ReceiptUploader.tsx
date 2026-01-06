@@ -42,6 +42,13 @@ const ReceiptUploader: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Check for supported MIME types for Gemini API
+    const supportedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif'];
+    if (!supportedTypes.includes(file.type)) {
+      setError(`Unsupported file format: ${file.type}. Please use PNG, JPEG, WEBP, or HEIC.`);
+      return;
+    }
+
     const hasKey = await checkApiKey();
     const aistudio = getAiStudio();
     if (!hasKey) {
@@ -64,9 +71,9 @@ const ReceiptUploader: React.FC = () => {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
         try {
-          // Use gemini-3-pro-preview for complex multimodal analysis tasks
+          // Use gemini-2.5-flash for faster multimodal analysis
           const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
+            model: 'gemini-2.5-flash',
             contents: {
               parts: [
                 {
@@ -116,10 +123,12 @@ const ReceiptUploader: React.FC = () => {
           setScannedExpenses(prev => [newExpense, ...prev]);
         } catch (apiErr: any) {
           // If the request fails with a missing project error, prompt for key again
-          if (apiErr.message?.includes("Requested entity was not found")) {
+          if (apiErr.message?.includes("Requested entity was not found") || apiErr.message?.includes("API key")) {
             setRequiresKey(true);
             setError("API Key verification failed. Please select a valid key from a paid project.");
             await getAiStudio()?.openSelectKey();
+          } else if (apiErr.message?.includes("Unsupported MIME type")) {
+             setError("The image format is not supported by the AI model. Please convert to JPEG or PNG.");
           } else {
             setError("Failed to analyze receipt. Please try again.");
           }
@@ -156,7 +165,7 @@ const ReceiptUploader: React.FC = () => {
             type="file" 
             ref={fileInputRef} 
             className="hidden" 
-            accept="image/*" 
+            accept="image/png, image/jpeg, image/webp, image/heic, image/heif" 
             onChange={handleFileUpload}
           />
           <button 
@@ -195,7 +204,7 @@ const ReceiptUploader: React.FC = () => {
               {isScanning ? 'AI is analyzing...' : 'Upload Receipt Photo'}
             </h3>
             <p className="text-slate-400 text-sm font-medium max-w-[200px]">
-              {isScanning ? 'Extracting amounts, dates, and items using Gemini 3 Pro.' : 'Drag and drop or click to capture a fuel or material receipt.'}
+              {isScanning ? 'Extracting amounts, dates, and items using Gemini.' : 'Drag and drop or click to capture a fuel or material receipt (PNG, JPG).'}
             </p>
           </div>
 

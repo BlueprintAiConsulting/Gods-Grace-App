@@ -36,6 +36,19 @@ const CENTRAL_PA_TOWNS = [
   "Ephrata", "Manheim", "Marietta", "Mount Joy", "Hummelstown", "Middletown"
 ];
 
+// Priority Locations with ZIPs for Auto-Complete
+const PRIORITY_LOCATIONS = [
+  { town: "York", state: "PA" }, 
+  { town: "Dover", state: "PA", zip: "17315" },
+  { town: "Hanover", state: "PA", zip: "17331" },
+  { town: "Red Lion", state: "PA", zip: "17356" },
+  { town: "Lancaster", state: "PA" }, 
+  { town: "Manchester", state: "PA", zip: "17345" },
+  { town: "Wrightsville", state: "PA", zip: "17368" },
+  { town: "Dallastown", state: "PA", zip: "17313" },
+  { town: "Spring Grove", state: "PA", zip: "17362" }
+];
+
 // Prioritized PA Street Suffixes
 const STREET_SUFFIXES = [
   "St", "Rd", "Ave", "Dr", "Ln", "Ct", "Blvd", "Way", "Cir", "Pike", 
@@ -79,8 +92,14 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [mapsLoaded, setMapsLoaded] = useState(false);
+  
+  // API Route Data
   const [optimizedPlan, setOptimizedPlan] = useState<string | null>(null);
-  const [groundingLinks, setGroundingLinks] = useState<any[]>([]);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
+  const [apiMetrics, setApiMetrics] = useState<{distance: string, duration: string} | null>(null);
+  
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'map' | 'text'>('map');
   const [draggedStopIndex, setDraggedStopIndex] = useState<number | null>(null);
@@ -95,8 +114,58 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
 
   const getAiStudio = () => (window as any).aistudio;
 
-  // Calculate Route Metrics (Distance & Time)
+  // Robust Google Maps Script Loader
+  const loadMapsScript = () => {
+    // 1. Check if already loaded
+    if ((window as any).google && (window as any).google.maps) {
+      setMapsLoaded(true);
+      return;
+    }
+
+    // 2. Check if script tag is already in DOM to prevent duplicates
+    if (document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
+       // It's loading...
+       return; 
+    }
+
+    // 3. Verify API Key Existence
+    const key = process.env.API_KEY;
+    if (key && key !== 'undefined') {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,geometry`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        setMapsLoaded(true);
+        if (error?.includes("Google Maps SDK")) setError(null);
+      };
+      script.onerror = () => {
+        console.error("Failed to load Google Maps SDK");
+        setError("Failed to connect to Google Maps. Please check your internet connection.");
+      };
+      document.head.appendChild(script);
+    } else {
+      console.warn("Attempted to load Maps SDK without a valid API Key");
+    }
+  };
+
+  // Attempt load on mount
+  useEffect(() => {
+    loadMapsScript();
+  }, []);
+
+  // Calculate Route Metrics (Fallback if API fails, or pre-optimization)
   const routeMetrics = useMemo(() => {
+    // If we have API data, use that
+    if (apiMetrics) {
+      return {
+        legs: [], 
+        totalDistance: apiMetrics.distance,
+        totalTime: apiMetrics.duration
+      };
+    }
+
+    // Fallback: Straight line calculation
     let totalDist = 0;
     const legMetrics: { distance: string; time: number }[] = [];
 
@@ -133,7 +202,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
         totalDistance: totalDist.toFixed(1),
         totalTime: Math.round((totalDist / AVERAGE_SPEED_MPH) * 60)
     };
-  }, [stops]);
+  }, [stops, apiMetrics]);
 
   // List Drag and Drop Handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -155,18 +224,34 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     newStops.splice(index, 0, draggedItem);
     
     setStops(newStops);
+    setRouteCoordinates([]); // Clear API path on manual reorder
+    setApiMetrics(null);
     setDraggedStopIndex(null);
   };
 
   // Reverse Geocode (Map Click -> Address)
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    // Strategy 1: Google Maps JS SDK Geocoder (Client-side)
+    if (mapsLoaded && (window as any).google) {
+      try {
+        const geocoder = new (window as any).google.maps.Geocoder();
+        const response = await geocoder.geocode({ location: { lat, lng } });
+        if (response.results[0]) {
+           return response.results[0].formatted_address.replace(', USA', '');
+        }
+      } catch (e) {
+        console.warn("Google JS SDK reverse geocode failed", e);
+      }
+    }
+
+    // Strategy 2: Nominatim Fallback
     try {
-      // Add delay for free tier usage
-      await new Promise(r => setTimeout(r, 500));
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+      await new Promise(r => setTimeout(r, 600));
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+         headers: { 'User-Agent': 'GodsGraceCommandCenter/1.0' }
+      });
       const data = await res.json();
       
-      // Construct a clean short address if possible
       if (data.address) {
         const num = data.address.house_number || '';
         const road = data.address.road || '';
@@ -225,6 +310,8 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
         isGeocoding: false
       } : s));
       
+      setRouteCoordinates([]); // Clear optimized route if manual change occurs
+      setApiMetrics(null);
       setIsVerifying(false);
     };
 
@@ -255,6 +342,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
 
     const validPoints: [number, number][] = [];
 
+    // 1. Draw Markers
     stops.forEach((stop, idx) => {
       if (stop.lat && stop.lng) {
         const isStart = idx === 0;
@@ -305,20 +393,6 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
         addrDiv.innerText = stop.address;
         popupContainer.appendChild(addrDiv);
 
-        // Next Stop Metrics (if applicable)
-        if (idx < stops.length - 1 && routeMetrics.legs[idx]) {
-          const leg = routeMetrics.legs[idx];
-          const metricsDiv = document.createElement('div');
-          metricsDiv.innerHTML = `
-             <div class="flex items-center gap-2 pt-2 border-t border-slate-100 text-xs font-bold text-[#143d2b]">
-               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-               ${leg.time} min to next
-             </div>
-             <div class="text-[10px] text-slate-400 font-medium ml-5">${leg.distance} miles</div>
-          `;
-          popupContainer.appendChild(metricsDiv);
-        }
-
         // Actions Container
         const actionsDiv = document.createElement('div');
         actionsDiv.className = "flex items-center justify-between mt-3 pt-2 border-t border-slate-100";
@@ -352,21 +426,14 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
           .bindPopup(popupContainer)
           .addTo(map);
 
-        // Real-time polyline update during drag
-        marker.on('drag', (e: any) => {
-          if (polylineRef.current) {
-            // Update the visual path using current locations of all markers
-            const currentPoints = markersRef.current.map(m => m.getLatLng());
-            polylineRef.current.setLatLngs(currentPoints);
-          }
-        });
-
         // Handle drag end to update state
         marker.on('dragend', (event: any) => {
           const newPos = event.target.getLatLng();
           setStops(prev => prev.map(s => 
             s.id === stop.id ? { ...s, lat: newPos.lat, lng: newPos.lng } : s
           ));
+          setRouteCoordinates([]); // Reset API route if moved
+          setApiMetrics(null);
         });
 
         markersRef.current.push(marker);
@@ -374,63 +441,22 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       }
     });
 
-    // Draw route line if we have points
+    // 2. Draw Polyline (Either API Route or Straight Lines)
     if (validPoints.length > 1) {
-      polylineRef.current = L.polyline(validPoints, { 
-        color: '#143d2b', 
-        weight: 4,
-        opacity: 0.7,
-        dashArray: '10, 10',
-        dashOffset: '0'
-      }).addTo(map);
-
-      // Add Dynamic Leg Labels
-      for (let i = 0; i < validPoints.length - 1; i++) {
-        const p1 = validPoints[i];
-        const p2 = validPoints[i+1];
-        
-        // Calculate metrics for this visual segment
-        const R = 3958.8; // Radius of Earth in miles
-        const dLat = (p2[0] - p1[0]) * Math.PI / 180;
-        const dLon = (p2[1] - p1[1]) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                  Math.cos(p1[0] * Math.PI / 180) * Math.cos(p2[0] * Math.PI / 180) * 
-                  Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const distance = R * c;
-        const timeMinutes = Math.round((distance / AVERAGE_SPEED_MPH) * 60);
-
-        // Midpoint
-        const midLat = (p1[0] + p2[0]) / 2;
-        const midLng = (p1[1] + p2[1]) / 2;
-
-        const labelHtml = `
-          <div class="flex items-center gap-1.5 bg-white/95 backdrop-blur px-2 py-0.5 rounded-full shadow-sm border border-slate-200 transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform cursor-default pointer-events-auto">
-             <span class="text-[10px] font-bold text-slate-700 whitespace-nowrap">${Math.max(1, timeMinutes)} min</span>
-             <span class="w-0.5 h-2 bg-slate-300 rounded-full"></span>
-             <span class="text-[9px] font-medium text-slate-400 whitespace-nowrap">${distance.toFixed(1)} mi</span>
-          </div>
-        `;
-
-        const labelIcon = L.divIcon({
-          className: 'route-label-icon',
-          html: labelHtml,
-          iconSize: [0, 0], // Size handled by HTML content
-          iconAnchor: [0, 0] // Centering handled by CSS transform in HTML
-        });
-
-        const labelMarker = L.marker([midLat, midLng], { 
-          icon: labelIcon, 
-          zIndexOffset: 100, // Below pins (1000)
-          interactive: false
-        }).addTo(map);
-
-        routeLabelsRef.current.push(labelMarker);
-      }
+      const pathPoints = routeCoordinates.length > 0 ? routeCoordinates : validPoints;
       
-      // Smart Bounds Fitting: Only fit bounds if the NUMBER of stops changed, or first load.
-      if (validPoints.length !== prevStopCountRef.current) {
-         const bounds = L.latLngBounds(validPoints);
+      polylineRef.current = L.polyline(pathPoints, { 
+        color: '#143d2b', 
+        weight: 5,
+        opacity: 0.8,
+        lineCap: 'round',
+        lineJoin: 'round',
+        dashArray: routeCoordinates.length > 0 ? null : '10, 10'
+      }).addTo(map);
+      
+      // Smart Bounds Fitting
+      if (validPoints.length !== prevStopCountRef.current || routeCoordinates.length > 0) {
+         const bounds = L.latLngBounds(validPoints); // Fit to stops, not just path
          map.fitBounds(bounds, { padding: [50, 50] });
          prevStopCountRef.current = validPoints.length;
       }
@@ -441,36 +467,112 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       prevStopCountRef.current = 0;
     }
 
-  }, [stops, viewMode, routeMetrics]);
+  }, [stops, viewMode, routeCoordinates]);
 
-  // Geocoding Helper
-  const geocodeAddress = async (address: string): Promise<{lat: number, lng: number} | null> => {
+  // --- GEOCODING STRATEGIES ---
+
+  // Strategy 1: Google Maps JS SDK (Robust, Client-side)
+  const geocodeWithGoogle = async (address: string): Promise<{lat: number, lng: number} | null> => {
+    if (mapsLoaded && (window as any).google) {
+      try {
+        const geocoder = new (window as any).google.maps.Geocoder();
+        const response = await geocoder.geocode({ address });
+        if (response.results[0]) {
+           const loc = response.results[0].geometry.location;
+           return { lat: loc.lat(), lng: loc.lng() };
+        }
+      } catch (e) {
+        console.warn("Google JS Geocoding error", e);
+      }
+    }
+    return null;
+  };
+
+  // Strategy 2: Nominatim / OpenStreetMap (Free, Fallback)
+  const geocodeWithNominatim = async (address: string): Promise<{lat: number, lng: number} | null> => {
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
     try {
-      // Using standard Nominatim free tier - Requires generous throttling in production
-      await new Promise(r => setTimeout(r, 800)); 
-      
-      // Remove any apartment/unit numbers from the start of string for better geocoding
-      const cleanAddress = address.replace(/^(unit|apt|suite|#)\s*[\w-]+\s*,?\s*/i, '');
+      let cleanAddress = address
+        .replace(/^(unit|apt|suite|#)\s*[\w-]+\s*,?\s*/i, '')
+        .replace(/\bMt\b\.?\s/g, 'Mount ')
+        .replace(/\bRd\b\.?/gi, 'Road')
+        .replace(/\bSt\b\.?/gi, 'Street')
+        .trim();
 
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanAddress)}&limit=1`);
-      const data = await res.json();
+      const performSearch = async (query: string, retries = 3) => {
+        for (let i = 0; i < retries; i++) {
+          let controller: AbortController | null = null;
+          let id: ReturnType<typeof setTimeout> | null = null;
+          try {
+            controller = new AbortController();
+            id = setTimeout(() => controller?.abort(), 15000); 
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+            const res = await fetch(url, {
+              headers: { 'User-Agent': 'GodsGraceCommandCenter/1.0' },
+              signal: controller.signal
+            });
+            if (id) clearTimeout(id);
+            if (!res.ok) {
+               if (res.status === 429) { await sleep(3000 * (i + 1)); continue; }
+               throw new Error(`HTTP Error ${res.status}`);
+            }
+            return await res.json();
+          } catch (err: any) {
+             if (id) clearTimeout(id);
+             if (i === retries - 1) throw err;
+             await sleep(1000 + (i * 1000));
+          }
+        }
+      };
+
+      let data = await performSearch(cleanAddress);
+      
+      // Fallback: If full search failed, try without zip if it looks like we sent one
+      if (!data || data.length === 0) {
+        if (/\d{5}/.test(cleanAddress)) {
+             const noZip = cleanAddress.replace(/\s\d{5}(?:-\d{4})?$/, '');
+             await sleep(1000);
+             data = await performSearch(noZip);
+        }
+      }
+      
+      // Fallback: Try just street + city
+      if (!data || data.length === 0) {
+         const parts = cleanAddress.split(',');
+         if (parts.length >= 2) {
+             const cityState = parts.slice(-2).join(',').trim();
+             if (cityState.length > 5) {
+                await sleep(1000);
+                data = await performSearch(cityState);
+             }
+         }
+      }
       
       if (data && data.length > 0) {
         return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
       }
     } catch (e) {
-      console.error("Geocoding failed for", address, e);
+      console.warn("Nominatim geocoding failed for", address, e);
+      return null;
     }
     return null;
+  };
+
+  // Main Geocoding Orchestrator
+  const geocodeAddress = async (address: string): Promise<{lat: number, lng: number} | null> => {
+    // Try Google first if loaded
+    if (mapsLoaded) {
+      const googleResult = await geocodeWithGoogle(address);
+      if (googleResult) return googleResult;
+    }
+    return await geocodeWithNominatim(address);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setNewAddress(val);
-    
-    // Clear error if user starts typing again
     if (error) setError(null);
-
     if (val.length < 2) {
       setSuggestions([]);
       return;
@@ -496,33 +598,63 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
        );
        if (potentialSuffixes.length > 0) {
          const base = val.substring(0, val.lastIndexOf(' '));
-         potentialSuffixes.forEach(s => {
-             newSuggestions.push(`${base} ${s}`);
-         });
+         potentialSuffixes.forEach(s => newSuggestions.push(`${base} ${s}`));
        }
     }
 
-    // 3. Town Suggestions (After Suffix or Comma)
+    // 3. Priority Town Autocomplete
+    const lowerVal = val.toLowerCase();
+    const hasComma = val.includes(',');
+    
+    // Check if input ends with a street suffix (e.g. "123 Main St")
     const endsWithSuffix = STREET_SUFFIXES.some(s => 
-      val.toLowerCase().endsWith(` ${s.toLowerCase()}`) || 
-      val.toLowerCase().endsWith(` ${s.toLowerCase()}.`)
+      lowerVal.endsWith(` ${s.toLowerCase()}`) || 
+      lowerVal.endsWith(` ${s.toLowerCase()}.`)
     );
 
-    if (endsWithSuffix && !val.includes(',')) {
-      const priorityTowns = ["York", "Dover", "Hanover", "Red Lion", "Lancaster"];
-      priorityTowns.forEach(town => newSuggestions.push(`${val}, ${town}, PA`));
+    // Suggest Priority Towns immediately after street is typed
+    if ((endsWithSuffix && !hasComma) || (hasComma && val.split(',').length === 2 && !val.split(',')[1].trim())) {
+      const base = hasComma ? val.split(',')[0] : val;
+      PRIORITY_LOCATIONS.slice(0, 5).forEach(loc => {
+          if (loc.zip) {
+             newSuggestions.push(`${base}, ${loc.town}, ${loc.state} ${loc.zip}`);
+          } else {
+             newSuggestions.push(`${base}, ${loc.town}, ${loc.state}`);
+          }
+      });
     }
 
-    // 4. Explicit City Search
-    if (val.includes(',')) {
+    // 4. Partial Town Match
+    if (hasComma) {
       const parts = val.split(',');
       const cityPart = parts[parts.length - 1].trim().toLowerCase();
+      
       if (cityPart.length > 0) {
-        const matchedTowns = CENTRAL_PA_TOWNS.filter(t => 
-          t.toLowerCase().startsWith(cityPart)
-        );
         const prefix = parts.slice(0, -1).join(',').trim();
-        matchedTowns.slice(0, 3).forEach(t => newSuggestions.push(`${prefix}, ${t}, PA`));
+        
+        // Match against Priority Locations first
+        const matchedPriority = PRIORITY_LOCATIONS.filter(l => 
+            l.town.toLowerCase().startsWith(cityPart)
+        );
+        
+        matchedPriority.forEach(loc => {
+            if (loc.zip) {
+                newSuggestions.push(`${prefix}, ${loc.town}, ${loc.state} ${loc.zip}`);
+            } else {
+                newSuggestions.push(`${prefix}, ${loc.town}, ${loc.state}`);
+            }
+        });
+
+        // Fill remaining slots with generic Central PA towns
+        if (newSuggestions.length < 5) {
+            const otherTowns = CENTRAL_PA_TOWNS.filter(t => 
+                t.toLowerCase().startsWith(cityPart) && 
+                !matchedPriority.some(mp => mp.town === t)
+            );
+            otherTowns.slice(0, 5 - newSuggestions.length).forEach(t => {
+                newSuggestions.push(`${prefix}, ${t}, PA`);
+            });
+        }
       }
     }
 
@@ -534,33 +666,28 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     setSuggestions([]);
   };
 
-  // Input Validation Logic
   const validateAddressInput = (input: string) => {
     const clean = input.trim();
     if (clean.length < 5) {
       setError("Address is too short. Please enter a full street address.");
       return false;
     }
-
-    // Check for starting digit (Street number)
     if (!/^\d+/.test(clean)) {
       setError("Start with a street number (e.g. '123').");
       return false;
     }
-
-    // Check for street suffix
     const hasSuffix = STREET_SUFFIXES.some(s => new RegExp(`\\b${s}\\.?\\b`, 'i').test(clean));
     if (!hasSuffix) {
       setError("Include a street type (St, Rd, Ave, etc).");
       return false;
     }
-
-    // Check for local context (Town or State)
+    // Updated validation to allow Zip Code or Town/State
     const hasTown = CENTRAL_PA_TOWNS.some(t => new RegExp(`\\b${t}\\b`, 'i').test(clean));
     const hasState = /\bPA\b/i.test(clean) || /\bPennsylvania\b/i.test(clean);
+    const hasZip = /\b17\d{3}\b/.test(clean); // Basic PA zip check (17xxx)
     
-    if (!hasTown && !hasState) {
-       setError("Specify a Central PA town or add 'PA'.");
+    if (!hasTown && !hasState && !hasZip) {
+       setError("Specify a Central PA town, 'PA', or a ZIP code.");
        return false;
     }
     return true;
@@ -568,55 +695,24 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
 
   const verifyAndAddAddress = async () => {
     if (!newAddress.trim()) return;
-
-    // Validate before proceeding
-    if (!validateAddressInput(newAddress)) {
-      return;
-    }
+    if (!validateAddressInput(newAddress)) return;
     setError(null);
-
     setIsVerifying(true);
     const tempId = Date.now().toString();
     
-    // 1. Add placeholder to UI immediately
+    // Add placeholder
     const newStop: RouteStop = {
       id: tempId,
       address: newAddress,
       isGeocoding: true
     };
     
-    // Helper to get formatted address from AI
     let finalAddress = newAddress.trim();
-    const aistudio = getAiStudio();
-    const hasKey = await aistudio?.hasSelectedApiKey();
-
-    if (hasKey) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: `
-            Standardize this address specifically for Central Pennsylvania (York/Lancaster region).
-            Input: "${finalAddress}"
-            
-            Rules:
-            1. Correct common spelling errors for local towns (e.g. "Hbg" -> "Harrisburg").
-            2. Expand abbreviations like "Mt" to "Mount", "Mkt" to "Market" if appropriate for street names.
-            3. Ensure State is PA.
-            4. Return ONLY the clean, full address string.
-          `,
-        });
-        if (response.text) finalAddress = response.text.trim();
-      } catch (e) { console.warn('AI verify failed', e); }
-    }
-
-    newStop.address = finalAddress;
     setStops(prev => [...prev, newStop]);
     setNewAddress('');
     setSuggestions([]);
-    setIsVerifying(false);
-
-    // 2. Geocode in background
+    
+    // Geocode
     const coords = await geocodeAddress(finalAddress);
     
     setStops(prev => prev.map(s => 
@@ -624,135 +720,158 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
         ? { ...s, lat: coords?.lat, lng: coords?.lng, isGeocoding: false, geocodingError: !coords } 
         : s
     ));
+    setRouteCoordinates([]);
+    setApiMetrics(null);
+    setIsVerifying(false);
   };
 
   const removeStop = (id: string) => {
     setStops(prev => prev.filter(s => s.id !== id));
+    setRouteCoordinates([]);
+    setApiMetrics(null);
   };
 
-  const handleImportMows = () => {
+  const handleImportMows = async () => {
+    if (isImporting) return;
     const mowJobs = jobs.filter(j => 
       ['Scheduled', 'In Progress'].includes(j.status) &&
       (j.jobType.toLowerCase().includes('mow') || 
        j.description.toLowerCase().includes('mow'))
     );
-
     if (mowJobs.length === 0) {
       alert("No active lawn mowing jobs found.");
       return;
     }
-
-    // Process one by one to respect geocoding limits gently
-    let delay = 0;
-    mowJobs.forEach((j) => {
+    setIsImporting(true);
+    for (const j of mowJobs) {
       const addr = j.address.toLowerCase().includes(j.cityArea.toLowerCase()) ? j.address : `${j.address}, ${j.cityArea}, PA`;
+      if (stops.find(s => s.address === addr)) continue;
+
+      const newStop: RouteStop = {
+        id: `JOB-${j.id}`,
+        address: addr,
+        isGeocoding: true
+      };
+      setStops(prev => [...prev, newStop]);
+
+      const coords = await geocodeAddress(addr);
       
-      // Check duplicate
-      if (!stops.find(s => s.address === addr)) {
-        setTimeout(() => {
-          const newStop: RouteStop = {
-            id: `JOB-${j.id}`,
-            address: addr,
-            isGeocoding: true
-          };
-          setStops(prev => [...prev, newStop]);
-          geocodeAddress(addr).then(coords => {
-            setStops(prev => prev.map(s => s.id === `JOB-${j.id}` ? { ...s, lat: coords?.lat, lng: coords?.lng, isGeocoding: false } : s));
-          });
-        }, delay);
-        delay += 800;
-      }
-    });
+      setStops(prev => prev.map(s => 
+        s.id === `JOB-${j.id}` 
+          ? { ...s, lat: coords?.lat, lng: coords?.lng, isGeocoding: false, geocodingError: !coords } 
+          : s
+      ));
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    setRouteCoordinates([]);
+    setApiMetrics(null);
+    setIsImporting(false);
   };
 
+  // --- GOOGLE ROUTES OPTIMIZATION (CLIENT-SIDE) ---
   const handleOptimize = async () => {
     if (stops.length < 2) {
       setError("Add at least 2 stops.");
       return;
     }
-
+    
+    // 1. Ensure Key
     const aistudio = getAiStudio();
     const hasKey = await aistudio?.hasSelectedApiKey();
     if (!hasKey) {
       await aistudio?.openSelectKey();
     }
 
+    // 2. Ensure Maps Loaded
+    if (!mapsLoaded) {
+      loadMapsScript();
+      setError("Initializing Google Maps... Please wait a moment and try again.");
+      return;
+    }
+    
+    if (!(window as any).google) {
+       setError("Google Maps SDK failed to load. Please verify your API key supports Maps JavaScript API.");
+       return;
+    }
+
     setIsOptimizing(true);
     setError(null);
     setOptimizedPlan(null);
-    setGroundingLinks([]);
+    setRouteCoordinates([]);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const originStop = stops[0];
+      const destinationStop = stops[stops.length - 1];
+      const waypointStops = stops.slice(1, -1);
       
-      // We pass the list with indices and coordinates for better accuracy
-      const stopsList = stops.map((s, i) => 
-        `${i}: ${s.address} ${s.lat && s.lng ? `(Lat: ${s.lat}, Lng: ${s.lng})` : ''}`
-      ).join('\n');
+      if (!originStop.lat || !originStop.lng || !destinationStop.lat || !destinationStop.lng) {
+        throw new Error("Missing coordinates for start or end point.");
+      }
       
-      const prompt = `
-        I have a list of stops for a landscaping crew in York, PA.
-        Start Location: ${stops[0].address} (Index 0)
-        
-        Stops to optimize:
-        ${stopsList}
+      const directionsService = new (window as any).google.maps.DirectionsService();
+      
+      // Convert internal waypoints to Google Maps API format
+      const waypoints = waypointStops
+        .filter(s => s.lat && s.lng)
+        .map(s => ({
+          location: { lat: s.lat, lng: s.lng },
+          stopover: true
+        }));
 
-        Task:
-        1. Reorder these stops to create the most efficient driving route starting from index 0.
-        2. Use the provided coordinates to ensure accurate routing sequence.
-        3. Return the response in raw JSON format with this structure:
-           {
-             "optimizedIndices": [0, 3, 1, 2, ...], 
-             "narrative": "Detailed turn-by-turn plan..."
-           }
-        4. The "optimizedIndices" array MUST contain the original indices in the new order.
-      `;
-
-      // Note: responseMimeType is not allowed with googleMaps tool, so we parse manually
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          tools: [{ googleMaps: {} }],
-        }
+      const result = await directionsService.route({
+        origin: { lat: originStop.lat, lng: originStop.lng },
+        destination: { lat: destinationStop.lat, lng: destinationStop.lng },
+        waypoints: waypoints,
+        optimizeWaypoints: true,
+        travelMode: (window as any).google.maps.TravelMode.DRIVING
       });
 
-      const text = response.text || '';
-      
-      // Extract JSON from text block
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0]);
-        if (data.optimizedIndices && Array.isArray(data.optimizedIndices)) {
-          // Reorder the stops state!
-          const newOrder = data.optimizedIndices.map((oldIndex: number) => stops[oldIndex]).filter(Boolean);
-          setStops(newOrder);
-          setOptimizedPlan(data.narrative || "Route optimized successfully.");
-        } else {
-          setOptimizedPlan(text); // Fallback to raw text
-        }
-      } else {
-         setOptimizedPlan(text);
-      }
-      
-      // Grounding data
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const links = chunks
-        .filter((c: any) => c.web?.uri || c.web?.title)
-        .map((c: any) => ({
-          title: c.web?.title || 'Map Link',
-          uri: c.web?.uri
-        }));
-      setGroundingLinks(links);
+      if (result.status === 'OK' && result.routes.length > 0) {
+        const route = result.routes[0];
+        
+        // 1. Reorder Stops based on optimized waypoint_order
+        const waypointOrder = route.waypoint_order; // Array of indices mapping original waypoints array
+        const reorderedWaypoints = waypointOrder.map((index: number) => waypointStops[index]);
+        const newStopOrder = [originStop, ...reorderedWaypoints, destinationStop];
+        
+        setStops(newStopOrder);
 
+        // 2. Extract Polyline Path for Leaflet
+        // The JS SDK returns array of LatLng objects, we map to [lat, lng]
+        if (route.overview_path) {
+          const path = route.overview_path.map((p: any) => [p.lat(), p.lng()] as [number, number]);
+          setRouteCoordinates(path);
+        }
+
+        // 3. Calculate Totals
+        let totalDistMeters = 0;
+        let totalDurationSeconds = 0;
+        route.legs.forEach((leg: any) => {
+           totalDistMeters += leg.distance.value;
+           totalDurationSeconds += leg.duration.value;
+        });
+
+        const totalMiles = (totalDistMeters * 0.000621371).toFixed(1);
+        const totalMinutes = Math.round(totalDurationSeconds / 60);
+        
+        setApiMetrics({
+           distance: totalMiles,
+           duration: totalMinutes.toString()
+        });
+
+        // 4. Generate Narrative
+        const narrative = `Optimized Route:\nStart at ${originStop.address}.\n\n` + 
+          newStopOrder.slice(1, -1).map((s, i) => `${i+1}. ${s.address}`).join('\n') +
+          `\n\nEnd at ${destinationStop.address}.\nTotal Distance: ${totalMiles} mi\nTotal Time: ${Math.floor(totalMinutes/60)}h ${totalMinutes%60}m`;
+        
+        setOptimizedPlan(narrative);
+
+      } else {
+        throw new Error("Directions request failed: " + result.status);
+      }
     } catch (err: any) {
       console.error(err);
-      if (err.message?.includes("API key")) {
-         setError("API Key issue. Please verify.");
-         await getAiStudio()?.openSelectKey();
-      } else {
-         setError("Optimization failed. Try again.");
-      }
+      setError("Optimization failed. " + (err.message || "Verify addresses and API key."));
     } finally {
       setIsOptimizing(false);
     }
@@ -763,14 +882,16 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-slate-900">Route Optimizer</h1>
-          <p className="text-slate-500 font-medium">AI logistics with dynamic mapping.</p>
+          <p className="text-slate-500 font-medium">AI logistics with Google Maps integration.</p>
         </div>
         <div className="flex gap-2">
            <button 
              onClick={handleImportMows}
-             className="bg-[#f4c430] text-[#143d2b] px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-[#eac040] transition-colors flex items-center gap-2"
+             disabled={isImporting}
+             className="bg-[#f4c430] text-[#143d2b] px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-[#eac040] transition-colors flex items-center gap-2 disabled:opacity-50"
            >
-             <Briefcase className="w-4 h-4" /> Import Active Jobs
+             {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Briefcase className="w-4 h-4" />}
+             {isImporting ? 'Importing...' : 'Import Active Jobs'}
            </button>
         </div>
       </div>
@@ -788,7 +909,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
               </div>
               {stops.length > 0 && (
                 <button 
-                  onClick={() => setStops([])}
+                  onClick={() => { setStops([]); setRouteCoordinates([]); setApiMetrics(null); }}
                   className="text-xs font-bold text-rose-500 hover:bg-rose-50 px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1"
                 >
                   <RotateCcw className="w-3 h-3" /> Reset
@@ -834,7 +955,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
                     </button>
                   ))}
                 </div>
-              )}
+              ))}
             </div>
 
             {/* Validation Error Display */}
@@ -886,18 +1007,14 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
                     </button>
                   </div>
                   
-                  {/* Metric Line to Next Stop */}
-                  {idx < stops.length - 1 && routeMetrics.legs[idx] && (
+                  {/* Visual Connector for sequence */}
+                  {idx < stops.length - 1 && (
                     <div className="pl-6 pb-2 -mt-1 pt-1 relative z-0">
                        <div className="border-l-2 border-dashed border-slate-300 ml-6 pl-6 py-2 flex items-center gap-3">
-                          <div className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md flex items-center gap-1.5 border border-blue-100 shadow-sm text-xs font-bold">
-                             <Clock className="w-3.5 h-3.5" /> 
-                             <span>{routeMetrics.legs[idx].time} min</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-xs font-semibold text-slate-400">
-                             <Car className="w-3.5 h-3.5" /> 
-                             <span>{routeMetrics.legs[idx].distance} mi</span>
-                          </div>
+                          <span className="text-xs text-slate-300 font-bold">
+                             {/* Hide per-leg metrics if API not run yet, to reduce clutter until solved */}
+                             {routeCoordinates.length > 0 ? '' : '...'}
+                          </span>
                        </div>
                     </div>
                   )}
@@ -917,7 +1034,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
                 className="w-full bg-[#143d2b] text-white py-4 rounded-xl font-black shadow-lg shadow-[#143d2b]/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isOptimizing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Navigation className="w-5 h-5" />}
-                {isOptimizing ? 'Optimizing Route...' : 'Calculate Best Route'}
+                {isOptimizing ? 'Optimizing Route...' : (!mapsLoaded ? 'Initialize Maps & Optimize' : 'Find Best Route (Google)')}
               </button>
             </div>
           </div>
@@ -956,19 +1073,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
                    </h3>
                    {optimizedPlan ? (
                      <div className="prose prose-sm prose-slate max-w-none">
-                       <div className="whitespace-pre-wrap">{optimizedPlan}</div>
-                       {groundingLinks.length > 0 && (
-                          <div className="mt-6 pt-6 border-t border-slate-100">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Google Maps Sources</p>
-                            <div className="flex flex-wrap gap-2">
-                              {groundingLinks.map((l, i) => (
-                                <a key={i} href={l.uri} target="_blank" className="text-xs bg-slate-50 px-3 py-1.5 rounded-lg text-blue-600 hover:underline flex items-center gap-1">
-                                  <MapPin className="w-3 h-3" /> {l.title}
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                       )}
+                       <div className="whitespace-pre-wrap font-mono text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">{optimizedPlan}</div>
                      </div>
                    ) : (
                      <p className="text-slate-400 italic">No optimization results yet. Run the optimizer to see details.</p>

@@ -30,7 +30,8 @@ import {
   Thermometer,
   CloudSun,
   Briefcase,
-  ChevronDown
+  ChevronDown,
+  Upload
 } from 'lucide-react';
 import { Job } from '../types';
 import { STATUS_COLORS } from '../constants';
@@ -40,6 +41,7 @@ interface JobManagementProps {
   jobs: Job[];
   onAddJob: () => void;
   onUpdateJob: (job: Job) => void;
+  onImportJobs?: (jobs: Job[]) => void;
 }
 
 type DateFilterType = 'All' | 'Overdue' | 'Today' | 'This Week' | 'Next Week';
@@ -52,7 +54,7 @@ interface WeatherData {
   humidity: number;
 }
 
-const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJob }) => {
+const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJob, onImportJobs }) => {
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [filterJobType, setFilterJobType] = useState<string>('All');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -65,6 +67,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
   const [dateFilter, setDateFilter] = useState<DateFilterType>('All');
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const dateFilterRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Weather State
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -208,6 +211,77 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
     return w.conditionCode >= 50 || w.precip > 0.1 || w.windSpeed > 20;
   };
 
+  // CSV Import Logic
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+
+      const lines = text.split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      const newJobs: Job[] = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        // Simple CSV splitting (doesn't handle commas inside quotes)
+        const values = line.split(',');
+        
+        // Helper to get value by rough header match
+        const getValue = (keyPart: string) => {
+          const index = headers.findIndex(h => h.includes(keyPart));
+          return index >= 0 ? values[index]?.trim() : '';
+        };
+
+        const job: Job = {
+          id: getValue('id') || `IMP-${Date.now()}-${i}`,
+          clientName: getValue('name') || 'Unknown Client',
+          phone: getValue('phone') || '',
+          email: getValue('email') || '',
+          address: getValue('address') || '',
+          cityArea: getValue('city') || 'York',
+          description: getValue('desc') || 'Imported Job',
+          jobType: getValue('type') || 'General',
+          status: (getValue('status') as any) || 'Scheduled',
+          priority: (getValue('priority') as any) || 'Medium',
+          leadSource: getValue('source') || 'CSV Import',
+          scheduledDate: getValue('date') || new Date().toISOString().split('T')[0],
+          estRevenue: parseFloat(getValue('revenue')) || 0,
+          estCost: parseFloat(getValue('cost')) || 0,
+          estProfit: 0, // Recalc below
+          estMargin: 0, // Recalc below
+          paymentStatus: 'Unpaid',
+          notes: '',
+          followUpCount: 0,
+          jobWalkthroughComplete: false,
+          recurringServicePitched: false,
+        };
+
+        // Calcs
+        job.estProfit = job.estRevenue - job.estCost;
+        job.estMargin = job.estRevenue ? Math.round((job.estProfit / job.estRevenue) * 100) : 0;
+
+        newJobs.push(job);
+      }
+
+      if (onImportJobs && newJobs.length > 0) {
+        onImportJobs(newJobs);
+      } else if (newJobs.length === 0) {
+        alert("No valid jobs found in CSV.");
+      }
+      
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -216,9 +290,25 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           <p className="text-slate-500">Managing operations and field fulfillment for God's Grace.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="p-2 border border-slate-200 rounded-xl hover:bg-white transition-colors">
+          <button className="p-2 border border-slate-200 rounded-xl hover:bg-white transition-colors" title="Download Export">
             <Download className="w-5 h-5 text-slate-500" />
           </button>
+          
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            accept=".csv" 
+            onChange={handleFileUpload} 
+            className="hidden" 
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 border border-slate-200 rounded-xl hover:bg-white transition-colors flex items-center gap-2 text-sm font-bold text-slate-600"
+            title="Import CSV"
+          >
+            <Upload className="w-5 h-5" /> Import
+          </button>
+
           <button 
             onClick={onAddJob}
             className="bg-[#143d2b] text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 hover:bg-[#1a4f38] transition-all shadow-lg shadow-[#143d2b]/20"
