@@ -21,7 +21,8 @@ import {
   GripVertical,
   Key,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  Repeat
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { Job } from '../types';
@@ -96,6 +97,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isRoundTrip, setIsRoundTrip] = useState(true); // Default to true for service businesses
   
   // Maps State
   const [mapsLoaded, setMapsLoaded] = useState(false);
@@ -405,12 +407,13 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     stops.forEach((stop, idx) => {
       if (stop.lat && stop.lng) {
         const isStart = idx === 0;
+        const isEnd = idx === stops.length - 1;
         
         // Create custom icon based on position
         const iconHtml = `
           <div style="
-            background-color: ${isStart ? '#143d2b' : '#f4c430'};
-            color: ${isStart ? 'white' : '#143d2b'};
+            background-color: ${isStart ? '#143d2b' : (isEnd && !isRoundTrip) ? '#cf3a3a' : '#f4c430'};
+            color: ${isStart ? 'white' : (isEnd && !isRoundTrip) ? 'white' : '#143d2b'};
             width: 24px;
             height: 24px;
             border-radius: 50%;
@@ -526,11 +529,11 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
       prevStopCountRef.current = 0;
     }
 
-  }, [stops, viewMode, routeCoordinates, mapsLoaded]);
+  }, [stops, viewMode, routeCoordinates, mapsLoaded, isRoundTrip]);
 
   // --- GEOCODING STRATEGIES ---
 
-  // Strategy 1: Google Maps JS SDK (Robust, Client-side)
+  // Strategy 1: Google Maps JS SDK Geocoder (Client-side)
   const geocodeWithGoogle = async (address: string): Promise<{lat: number, lng: number} | null> => {
     if (mapsLoaded && (window as any).google && !authError) {
       try {
@@ -864,9 +867,21 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
     
     try {
       const originStop = stops[0];
-      const destinationStop = stops[stops.length - 1];
-      const waypointStops = stops.slice(1, -1);
       
+      // LOGIC UPGRADE: Handle Round Trip vs One Way
+      let destinationStop: RouteStop;
+      let waypointStops: RouteStop[];
+
+      if (isRoundTrip) {
+        // Round trip: Start = Stop[0], End = Stop[0], Optimize ALL others
+        destinationStop = originStop;
+        waypointStops = stops.slice(1);
+      } else {
+        // One way: Start = Stop[0], End = Stop[last], Optimize middle
+        destinationStop = stops[stops.length - 1];
+        waypointStops = stops.slice(1, -1);
+      }
+
       if (!originStop.lat || !originStop.lng || !destinationStop.lat || !destinationStop.lng) {
         throw new Error("Missing coordinates for start or end point.");
       }
@@ -893,14 +908,24 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
         const route = result.routes[0];
         
         // 1. Reorder Stops based on optimized waypoint_order
-        const waypointOrder = route.waypoint_order; // Array of indices mapping original waypoints array
+        // Google returns indices corresponding to the 'waypoints' array passed in.
+        const waypointOrder = route.waypoint_order;
         const reorderedWaypoints = waypointOrder.map((index: number) => waypointStops[index]);
-        const newStopOrder = [originStop, ...reorderedWaypoints, destinationStop];
+        
+        let newStopOrder: RouteStop[];
+        if (isRoundTrip) {
+           // For round trip list view, we keep the original start at top, 
+           // follow with optimized middle stops. 
+           // We do NOT duplicate the start stop at the bottom of the list to avoid confusion,
+           // even though the map path returns to start.
+           newStopOrder = [originStop, ...reorderedWaypoints];
+        } else {
+           newStopOrder = [originStop, ...reorderedWaypoints, destinationStop];
+        }
         
         setStops(newStopOrder);
 
         // 2. Extract Polyline Path for Leaflet
-        // The JS SDK returns array of LatLng objects, we map to [lat, lng]
         if (route.overview_path) {
           const path = route.overview_path.map((p: any) => [p.lat(), p.lng()] as [number, number]);
           setRouteCoordinates(path);
@@ -923,8 +948,8 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
         });
 
         // 4. Generate Narrative
-        const narrative = `Optimized Route:\nStart at ${originStop.address}.\n\n` + 
-          newStopOrder.slice(1, -1).map((s, i) => `${i+1}. ${s.address}`).join('\n') +
+        const narrative = `Optimized Route ${isRoundTrip ? '(Round Trip)' : ''}:\nStart at ${originStop.address}.\n\n` + 
+          reorderedWaypoints.map((s, i) => `${i+1}. ${s.address}`).join('\n') +
           `\n\nEnd at ${destinationStop.address}.\nTotal Distance: ${totalMiles} mi\nTotal Time: ${Math.floor(totalMinutes/60)}h ${totalMinutes%60}m`;
         
         setOptimizedPlan(narrative);
@@ -1036,6 +1061,22 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
               </div>
             )}
 
+            {/* Route Options */}
+            <div className="mb-4 flex items-center gap-2">
+               <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${isRoundTrip ? 'bg-[#143d2b] border-[#143d2b]' : 'border-slate-300 bg-white'}`}>
+                     {isRoundTrip && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    className="hidden" 
+                    checked={isRoundTrip} 
+                    onChange={(e) => setIsRoundTrip(e.target.checked)} 
+                  />
+                  <span className="text-xs font-bold text-slate-600 group-hover:text-[#143d2b] transition-colors">Return to Start (Round Trip)</span>
+               </label>
+            </div>
+
             {/* Stop List */}
             <div className="space-y-0 max-h-[500px] overflow-y-auto pr-1">
               {stops.map((stop, idx) => (
@@ -1105,7 +1146,7 @@ const RouteOptimizer: React.FC<RouteOptimizerProps> = ({ jobs = [] }) => {
                 className="w-full bg-[#143d2b] text-white py-4 rounded-xl font-black shadow-lg shadow-[#143d2b]/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isOptimizing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Navigation className="w-5 h-5" />}
-                {isOptimizing ? 'Optimizing Route...' : (!mapsLoaded ? 'Initialize Maps & Optimize' : 'Find Best Route (Google)')}
+                {isOptimizing ? 'Optimizing Order...' : (!mapsLoaded ? 'Initialize Maps & Optimize' : `Optimize ${isRoundTrip ? 'Round Trip' : 'Sequence'}`)}
               </button>
             </div>
           </div>

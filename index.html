@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>God's Grace Command Center</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,13 +16,23 @@
     body {
       font-family: 'Inter', sans-serif;
       background-color: #f8fafc;
+      -webkit-tap-highlight-color: transparent;
     }
     /* Ensure all user input text is black by default for visibility */
     input, textarea, select {
       color: #000000 !important;
+      font-size: 16px !important; /* Prevent iOS zoom */
     }
     input::placeholder, textarea::placeholder {
       color: #94a3b8 !important; /* Slate-400 for placeholders */
+    }
+    /* Hide scrollbar for clean mobile look but allow scrolling */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
     }
   </style>
 <script type="importmap">

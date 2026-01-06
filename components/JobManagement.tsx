@@ -32,11 +32,13 @@ import {
   Briefcase, 
   ChevronDown, 
   Upload, 
-  Save 
+  Save,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import { Job } from '../types';
 import { STATUS_COLORS } from '../constants';
 import JobDetailsModal from './JobDetailsModal';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 
 interface JobManagementProps {
   jobs: Job[];
@@ -125,6 +127,20 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
     const types = new Set(customerJobs.map(j => j.jobType).filter(Boolean));
     return ['All', ...Array.from(types).sort()];
   }, [customerJobs]);
+
+  // Calculate Job Type Distribution for Chart
+  const jobTypeDistribution = useMemo(() => {
+    const counts: Record<string, number> = {};
+    customerJobs.forEach(job => {
+      const type = job.jobType || 'Other';
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [customerJobs]);
+
+  const CHART_COLORS = ['#143d2b', '#f4c430', '#4a3728', '#64748b', '#94a3b8'];
   
   const filteredAndSorted = useMemo(() => {
     let result = [...customerJobs];
@@ -215,7 +231,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
     return w.conditionCode >= 50 || w.precip > 0.1 || w.windSpeed > 20;
   };
 
-  // CSV Import Logic
+  // CSV Import Logic with Enhanced Validation
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -226,9 +242,15 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
       if (!text) return;
 
       const lines = text.split('\n');
+      if (lines.length < 2) {
+        alert("CSV file appears to be empty or missing headers.");
+        return;
+      }
+
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
       
       const newJobs: Job[] = [];
+      let skippedCount = 0;
       
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -240,9 +262,30 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           return index >= 0 ? values[index]?.trim() : '';
         };
 
+        // 1. Validation: Required Client Name
+        const clientName = getValue('name') || getValue('client');
+        if (!clientName) {
+            console.warn(`Row ${i + 1} skipped: Missing Client Name`);
+            skippedCount++;
+            continue;
+        }
+
+        // 2. Validation: Safe Number Parsing
+        const estRevenue = parseFloat(getValue('revenue') || '0');
+        const estCost = parseFloat(getValue('cost') || '0');
+
+        // 3. Validation: Date Normalization (YYYY-MM-DD)
+        const parseDate = (dateStr: string) => {
+            if (!dateStr) return new Date().toISOString().split('T')[0];
+            const timestamp = Date.parse(dateStr);
+            return isNaN(timestamp) ? new Date().toISOString().split('T')[0] : new Date(timestamp).toISOString().split('T')[0];
+        };
+
+        const scheduledDate = parseDate(getValue('date') || getValue('scheduled'));
+
         const job: Job = {
           id: getValue('id') || `IMP-${Date.now()}-${i}`,
-          clientName: getValue('name') || 'Unknown Client',
+          clientName: clientName,
           phone: getValue('phone') || '',
           email: getValue('email') || '',
           address: getValue('address') || '',
@@ -252,9 +295,9 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           status: (getValue('status') as any) || 'Scheduled',
           priority: (getValue('priority') as any) || 'Medium',
           leadSource: getValue('source') || 'CSV Import',
-          scheduledDate: getValue('date') || new Date().toISOString().split('T')[0],
-          estRevenue: parseFloat(getValue('revenue')) || 0,
-          estCost: parseFloat(getValue('cost')) || 0,
+          scheduledDate: scheduledDate,
+          estRevenue: isNaN(estRevenue) ? 0 : estRevenue,
+          estCost: isNaN(estCost) ? 0 : estCost,
           estProfit: 0,
           estMargin: 0,
           paymentStatus: 'Unpaid',
@@ -264,6 +307,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           recurringServicePitched: false,
         };
 
+        // Recalculate derived math
         job.estProfit = job.estRevenue - job.estCost;
         job.estMargin = job.estRevenue ? Math.round((job.estProfit / job.estRevenue) * 100) : 0;
 
@@ -272,8 +316,13 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
 
       if (onImportJobs && newJobs.length > 0) {
         onImportJobs(newJobs);
+        let msg = `Successfully imported ${newJobs.length} jobs.`;
+        if (skippedCount > 0) {
+            msg += ` ${skippedCount} rows were skipped due to missing Client Name.`;
+        }
+        alert(msg);
       } else if (newJobs.length === 0) {
-        alert("No valid jobs found in CSV.");
+        alert("No valid jobs found in CSV. Please ensure you have a 'Client Name' or 'Name' column.");
       }
       
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -314,17 +363,15 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
   };
 
   return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 pb-20 md:pb-0">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Active Job Center</h2>
-          <p className="text-slate-500">Managing operations and field fulfillment for God's Grace.</p>
+          <p className="text-slate-500">Managing operations and field fulfillment.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="p-2 border border-slate-200 rounded-xl hover:bg-white transition-colors" title="Download Export">
-            <Download className="w-5 h-5 text-slate-500" />
-          </button>
-          
+        
+        {/* Actions Bar - Stacked on Mobile */}
+        <div className="flex flex-wrap items-center gap-2 md:gap-3 w-full md:w-auto">
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -334,76 +381,110 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
           />
           <button 
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 border border-slate-200 rounded-xl hover:bg-white transition-colors flex items-center gap-2 text-sm font-bold text-slate-600"
+            className="flex-1 md:flex-none p-2 border border-slate-200 rounded-xl hover:bg-white transition-colors flex items-center justify-center gap-2 text-sm font-bold text-slate-600"
             title="Import CSV"
           >
-            <Upload className="w-5 h-5" /> Import
+            <Upload className="w-5 h-5" /> <span className="md:hidden">Import</span>
           </button>
 
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-[#143d2b] text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 hover:bg-[#1a4f38] transition-all shadow-lg shadow-[#143d2b]/20"
+            className="flex-1 md:flex-none bg-[#143d2b] text-white px-5 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-[#1a4f38] transition-all shadow-lg shadow-[#143d2b]/20"
           >
             <Plus className="w-5 h-5" />
-            New Service Entry
+            <span>New Job</span>
           </button>
         </div>
       </div>
 
       {/* Weather & Field Conditions Widget */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div className="md:col-span-3 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-               <div className="bg-sky-50 p-3 rounded-2xl">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         <div className="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+               <div className="bg-sky-50 p-3 rounded-2xl shrink-0">
                   {weather ? getWeatherIcon(weather.conditionCode) : <Cloud className="w-8 h-8 text-slate-300" />}
                </div>
                <div>
-                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                    Current Field Conditions 
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border border-slate-200 px-2 py-0.5 rounded-full">York, PA</span>
+                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 flex-wrap">
+                    Current Conditions
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border border-slate-200 px-2 py-0.5 rounded-full whitespace-nowrap">York, PA</span>
                   </h3>
-                  <div className="flex items-center gap-4 text-sm text-slate-600 mt-1">
+                  <div className="flex flex-wrap items-center gap-3 md:gap-4 text-sm text-slate-600 mt-1">
                      <span className="flex items-center gap-1"><Thermometer className="w-4 h-4 text-rose-400" /> {weather?.temp ?? '--'}°F</span>
                      <span className="flex items-center gap-1"><Droplets className="w-4 h-4 text-blue-400" /> {weather?.humidity ?? '--'}%</span>
                      <span className="flex items-center gap-1"><Wind className="w-4 h-4 text-slate-400" /> {weather?.windSpeed ?? '--'} mph</span>
-                     {weather && weather.precip > 0 && (
-                       <span className="flex items-center gap-1 text-blue-600 font-bold"><CloudRain className="w-4 h-4" /> {weather.precip}" Rain</span>
-                     )}
                   </div>
                </div>
             </div>
 
             <div className="flex items-center gap-4 w-full md:w-auto bg-slate-50 p-3 rounded-xl border border-slate-100">
                <div className="flex-1 md:flex-none">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Operational Status</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status</p>
                   {weather ? (
-                    <div className={`flex items-center gap-2 font-bold ${isBadWeather(weather) ? 'text-amber-600' : 'text-emerald-600'}`}>
-                       {isBadWeather(weather) ? <AlertCircle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
-                       {isBadWeather(weather) ? 'Potential Delays (Weather)' : 'Good for Operations'}
+                    <div className={`flex items-center gap-2 font-bold text-sm ${isBadWeather(weather) ? 'text-amber-600' : 'text-emerald-600'}`}>
+                       {isBadWeather(weather) ? <AlertCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                       {isBadWeather(weather) ? 'Weather Delays' : 'Operational'}
                     </div>
                   ) : (
-                    <div className="text-slate-400 text-sm">Loading data...</div>
+                    <div className="text-slate-400 text-sm">Loading...</div>
                   )}
                </div>
-               <div className="hidden md:block w-px h-10 bg-slate-200"></div>
-               <div className="hidden md:block text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Jobs</p>
-                  <p className="text-xl font-black text-slate-900">{customerJobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled').length}</p>
+               <div className="w-px h-8 bg-slate-200"></div>
+               <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active</p>
+                  <p className="text-lg font-black text-slate-900 leading-none">{customerJobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled').length}</p>
                </div>
+            </div>
+         </div>
+
+         {/* Job Type Distribution Chart - Hidden on very small screens if needed, or stacked */}
+         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+            <h3 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+               <PieChartIcon className="w-4 h-4 text-slate-400" /> Job Distribution
+            </h3>
+            <div className="flex-1 min-h-[160px]">
+               <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                     <Pie
+                        data={jobTypeDistribution}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={60}
+                        paddingAngle={5}
+                        dataKey="value"
+                     >
+                        {jobTypeDistribution.map((entry, index) => (
+                           <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                        ))}
+                     </Pie>
+                     <RechartsTooltip 
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                     />
+                     <Legend 
+                        layout="vertical" 
+                        verticalAlign="middle" 
+                        align="right"
+                        iconType="circle"
+                        iconSize={6}
+                        wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }}
+                     />
+                  </PieChart>
+               </ResponsiveContainer>
             </div>
          </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         {/* Table Filters */}
-        <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between overflow-x-auto gap-4">
-          <div className="flex items-center gap-4">
+        <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-4 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-4 min-w-max">
             <div className="flex items-center gap-2">
-              {['All', 'Scheduled', 'In Progress', 'Completed', 'Follow-Up Needed'].map((status) => (
+              {['All', 'Scheduled', 'In Progress', 'Completed'].map((status) => (
                 <button
                   key={status}
                   onClick={() => setFilterStatus(status)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
                     filterStatus === status 
                       ? 'bg-[#143d2b] text-white shadow-md' 
                       : 'bg-white text-slate-500 border border-slate-200 hover:border-[#143d2b]'
@@ -417,43 +498,29 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
             <div className="w-px h-6 bg-slate-200 hidden sm:block"></div>
 
             <div className="relative group">
-              <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 group-hover:text-[#143d2b] transition-colors" />
+              <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
               <select
                 value={filterJobType}
                 onChange={(e) => setFilterJobType(e.target.value)}
-                className="bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg pl-9 pr-8 py-1.5 outline-none focus:border-[#143d2b] hover:border-slate-300 transition-colors cursor-pointer shadow-sm appearance-none"
+                className="bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg pl-9 pr-8 py-1.5 outline-none focus:border-[#143d2b] cursor-pointer shadow-sm appearance-none"
               >
                 {uniqueJobTypes.map(type => (
-                  <option key={type} value={type}>{type === 'All' ? 'All Job Types' : type}</option>
+                  <option key={type} value={type}>{type === 'All' ? 'All Types' : type}</option>
                 ))}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
             </div>
           </div>
-          
-          {/* Active Filters Display */}
-          {dateFilter !== 'All' && (
-            <div className="flex items-center gap-2 animate-in fade-in">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Filter:</span>
-              <button 
-                onClick={() => setDateFilter('All')}
-                className="flex items-center gap-1 pl-3 pr-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors"
-              >
-                Date: {dateFilter} <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* Real Data Table */}
+        {/* Real Data Table - Scrollable on Mobile */}
         <div className="overflow-x-auto min-h-[400px]">
-          <table className="w-full text-left">
+          <table className="w-full text-left min-w-[1000px]"> 
             <thead>
               <tr className="bg-slate-50/50 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                <th className="px-6 py-4">Job Info</th>
+                <th className="px-6 py-4 sticky left-0 bg-slate-50/95 z-10">Job Info</th>
                 <th className="px-6 py-4">Field Data</th>
                 
-                {/* Enhanced Next Action Header with Filter */}
                 <th className="px-6 py-4">
                   <div className="flex items-center justify-between gap-2">
                     <div 
@@ -466,7 +533,6 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-100" />}
                     </div>
                     
-                    {/* Date Filter Dropdown */}
                     <div className="relative" ref={dateFilterRef}>
                       <button 
                         onClick={(e) => {
@@ -481,9 +547,9 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                       >
                         <Filter className="w-3 h-3" />
                       </button>
-
+                      
                       {isDateFilterOpen && (
-                        <div className="absolute top-full left-0 mt-2 w-40 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-1.5 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute top-full left-0 mt-2 w-40 bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-1.5">
                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1 mb-1">
                              Filter Date
                            </div>
@@ -511,12 +577,8 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                   </div>
                 </th>
 
-                <th className="px-6 py-4">Status & Health</th>
+                <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-center">Crew</th>
-                <th className="px-6 py-4 text-right">Act. Hours</th>
-                <th className="px-6 py-4 text-right">Labor Cost</th>
-                <th className="px-6 py-4 text-right">Mat. Cost</th>
-                <th className="px-6 py-4 text-right">Variance</th>
                 <th className="px-6 py-4 text-right">Revenue</th>
                 <th className="px-6 py-4 text-right">Margin</th>
                 <th className="px-6 py-4"></th>
@@ -529,11 +591,12 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                   onClick={() => setSelectedJob(job)}
                   className="group hover:bg-slate-50/50 transition-colors cursor-pointer"
                 >
-                  <td className="px-6 py-5">
+                  {/* Sticky First Column for better mobile context */}
+                  <td className="px-6 py-5 sticky left-0 bg-white group-hover:bg-slate-50/50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                     <div className="flex flex-col">
                       <span className="text-xs font-bold text-[#143d2b] mb-1">{job.id}</span>
                       <span className="font-black text-slate-900 text-sm group-hover:text-[#143d2b] transition-colors">{job.clientName}</span>
-                      <span className="text-xs text-slate-500 mt-0.5 line-clamp-1 max-w-[200px]">{job.description}</span>
+                      <span className="text-xs text-slate-500 mt-0.5 line-clamp-1 max-w-[150px]">{job.description}</span>
                     </div>
                   </td>
                   <td className="px-6 py-5">
@@ -549,7 +612,6 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                     <div className="flex flex-col">
                       <span className="text-xs font-bold text-slate-800">{job.nextAction || 'None'}</span>
                       <span className={`text-[10px] font-bold uppercase mt-0.5 flex items-center gap-1 ${
-                         // Highlight Overdue dates
                          job.nextActionDate && new Date(job.nextActionDate) < new Date(new Date().setHours(0,0,0,0)) && job.status !== 'Completed'
                            ? 'text-rose-500' 
                            : 'text-slate-400'
@@ -564,10 +626,6 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                       <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black border uppercase w-fit tracking-wider ${STATUS_COLORS[job.status] || 'bg-slate-100 text-slate-800'}`}>
                         {job.status}
                       </span>
-                      <div className="flex items-center gap-2">
-                         {job.jobWalkthroughComplete ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> : <AlertCircle className="w-3 h-3 text-amber-500" />}
-                         <span className="text-[9px] font-black text-slate-400 uppercase">Walkthrough</span>
-                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-5">
@@ -575,34 +633,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                       <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center border-2 border-white shadow-sm overflow-hidden text-[#4a3728] font-black text-xs">
                         {job.crewLead?.substring(0,2) || '??'}
                       </div>
-                      <span className="text-[10px] font-bold text-slate-600 mt-1">{job.crewLead || 'TBD'}</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <span className="text-xs font-bold text-slate-700">
-                      {job.actualLaborHours !== undefined ? job.actualLaborHours : '-'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <span className="text-xs font-bold text-slate-700">
-                      {job.actualLaborCost !== undefined 
-                        ? `$${job.actualLaborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                        : '-'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <span className="text-xs font-bold text-slate-700">
-                      {job.actualMaterialCost !== undefined 
-                        ? `$${job.actualMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                        : '-'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <span className={`text-xs font-bold ${(job.jobCostingVariance || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {job.jobCostingVariance !== undefined 
-                        ? `$${job.jobCostingVariance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                        : '-'}
-                    </span>
                   </td>
                   <td className="px-6 py-5 text-right">
                     <div className="text-sm font-black text-slate-900">${(job.actualRevenue || job.estRevenue).toLocaleString()}</div>
@@ -612,28 +643,12 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                     <div className={`text-xs font-black ${job.estMargin >= 40 ? 'text-emerald-600' : 'text-amber-600'}`}>
                       {job.estMargin}%
                     </div>
-                    <div className="w-16 h-1 bg-slate-100 rounded-full mt-1.5 ml-auto overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full ${job.estMargin >= 40 ? 'bg-emerald-500' : 'bg-amber-500'}`} 
-                        style={{ width: `${job.estMargin}%` }}
-                      ></div>
-                    </div>
                   </td>
                   <td className="px-6 py-5 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {job.status !== 'Completed' && (
-                        <button
-                          onClick={(e) => handleMarkComplete(e, job)}
-                          title="Mark as Completed"
-                          className="p-2 bg-emerald-100 text-emerald-600 hover:bg-emerald-200 rounded-xl transition-all hover:scale-110"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                        </button>
-                      )}
+                    <div className="flex items-center justify-end gap-2">
                       <button 
                         onClick={(e) => { e.stopPropagation(); setSelectedJob(job); }}
-                        title="View Detailed Master Sheet" 
-                        className="p-2 bg-[#143d2b] text-white rounded-xl shadow-lg shadow-[#143d2b]/20 transition-all hover:scale-110"
+                        className="p-2 bg-[#143d2b] text-white rounded-xl shadow-lg shadow-[#143d2b]/20"
                       >
                         <ExternalLink className="w-4 h-4" />
                       </button>
@@ -647,17 +662,8 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
         
         {filteredAndSorted.length === 0 && (
           <div className="py-20 text-center flex flex-col items-center">
-            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-              <Search className="text-slate-300 w-8 h-8" />
-            </div>
+            <Search className="text-slate-300 w-12 h-12 mb-4" />
             <h3 className="font-bold text-slate-800">No active customer jobs</h3>
-            <p className="text-slate-500 text-sm max-w-xs mx-auto mt-1">
-              {filterJobType !== 'All' 
-                ? `No active jobs found for type "${filterJobType}".` 
-                : dateFilter !== 'All' 
-                  ? `No jobs found matching "${dateFilter}" filter.` 
-                  : "Check the Pipeline tab for new leads and pending quotes."}
-            </p>
           </div>
         )}
       </div>
@@ -706,7 +712,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ jobs, onAddJob, onUpdateJ
                               type="number"
                               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#143d2b]"
                               value={newJobData.estRevenue}
-                              onChange={e => setNewJobData({...newJobData, estRevenue: parseFloat(e.target.value)})}
+                              onChange={e => setNewJobData({...newJobData, estRevenue: parseFloat(e.target.value) || 0})}
                           />
                        </div>
                    </div>
